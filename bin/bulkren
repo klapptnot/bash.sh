@@ -1,0 +1,140 @@
+#!/usr/bin/bash
+# 🔗 https://github.com/Klapptnot/bash.sh
+
+include rsum.sh
+include barg.sh
+
+function image_metadata_get {
+  local what="${1}"
+  local file="${2}"
+  local METAINFO="none"
+
+  case "${what}" in
+  format)
+    read -r METAINFO < <(magick identify -format '%m' "${file}")
+    ;;
+  width)
+    read -r METAINFO < <(magick identify -format '%w' "${file}")
+    ;;
+  height)
+    read -r METAINFO < <(magick identify -format '%h' "${file}")
+    ;;
+  depth)
+    read -r METAINFO < <(magick identify -format '%z' "${file}")
+    ;;
+  colorspace)
+    read -r METAINFO < <(magick identify -format '%[colorspace]' "${file}")
+    ;;
+  filesize)
+    read -r METAINFO < <(stat -c%s "${file}")
+    ;;
+  filesize_kb)
+    read -r METAINFO < <(stat -c%s "${file}")
+    METAINFO=$((METAINFO / 1024))
+    ;;
+  date*)
+    IFS=':' read -r _ fmt <<<"${what}"
+    [ -z "${fmt}" ] && fmt="%Y-%m-%d-%H-%M-%S"
+    read -r date_exif < <(magick identify -format '%[date:create]' "${file}")
+    read -r METAINFO < <(date -d "${date_exif}" +"${fmt}")
+    ;;
+  *)
+    return 1
+    ;;
+  esac
+
+  printf '%s' "${METAINFO}"
+}
+
+function main {
+  barg::parse "${@}" << BARG || { echo "Command need args" && exit 1; }
+    meta {
+      summary: "Bulk file remame"
+      extargs: "PARAMS"
+      reqargs: true
+      helpmsg: true
+    }
+    f/files :strs => FILES "List of files to rename"
+    F/folder :str => FOLDER "Directory containing files to rename"
+    s/suffix :str => suffix "Suffix to add to filename"
+    p/prefix :str => PREFIX "Prefix to add to filename"
+    r/replace :str => REPLACE_STR "Replace pattern in filename"
+    D/dry :flag => DRY_RUN "Dry run, show what would be done"
+    I/ignore-folders :flag => IGNORE_FOLDERS "Ignore folders when renaming"
+BARG
+
+  [[ -n "${FILES}" && -n "${FOLDER}" ]] && barg::exit_msg "Uncompatible mix" "-f/--files is not allowed with -F/--folder"
+  barg::unload
+
+  declare -g FORMAT="${PARAMS[*]}"
+  if [ -z "${FORMAT}" ]; then
+    printf '%s\n' "Format string cannot be empty"
+    return
+  fi
+
+  # shellcheck disable=SC2154
+  ${DRY_RUN} && printf '%s\n' "Dry run, no changes will be made"
+  if [ ${#FILES[@]} -eq 0 ]; then
+    if [ -z "${FOLDER}" ]; then
+      return
+    fi
+    for file in "${FOLDER}"/*; do
+      FILES+=("${file}")
+    done
+    [ ${#FILES[@]} -eq 0 ] && return
+  fi
+
+  local format_img='\{\{img:([^\ ]+)\}\}'
+
+  # shellcheck disable=SC2155
+  for ((iter = 0; iter < "${#FILES[@]}"; iter++)); do
+    local file="${FILES[iter]}"
+    read -r file_path < <(realpath "${file}")
+
+    # shellcheck disable=SC2154
+    if ${IGNORE_FOLDERS} && [ -d "${file_path}" ]; then
+      continue
+    fi
+
+    read -r file_name < <(basename "${file_path}")
+    # Nothing to replace, skip
+    if [ -n "${REPLACE_STR}" ]; then
+      # shellcheck disable=SC2076  # Match literally
+      [[ "${file_name}" =~ "${REPLACE_STR}" ]] || continue
+    fi
+
+    read -r fp_dir < <(dirname "${file_path}")
+    local ext="${file_name##*.}"
+    local name="${FORMAT}"
+
+    while [[ "${name}" == *'{rand}'* ]]; do
+      read -r rand_str < <(rsum)
+      name="${name/\{rand\}/${rand_str}}"
+    done
+
+    name="${name//\{prefix\}/${prefix}}"
+    name="${name//\{suffix\}/${suffix}}"
+    name="${name//\{ext\}/${ext}}"
+    name="${name//\{name\}/${file_name%.*}}"
+    name="${name//\{iter\}/${iter}}"
+    name="${name//\{date\}/${date}}"
+
+    while [[ "${name}" =~ ${format_img} ]]; do
+      IFS=$'\n' read -r res < <(image_metadata_get "${BASH_REMATCH[1]}" "${file_path}")
+      name="${name//"${BASH_REMATCH[0]}"/"${res}"}"
+    done
+
+    [ -n "${REPLACE_STR}" ] && name="${file_name//${replace_str}/${name}}"
+    [ "${name}" == "${file_name}" ] && continue
+
+    printf '%b\n' "Moving \x1b[38;05;12m${file_path}\x1b[00m to \x1b[38;05;7m${fp_dir}/${name}\x1b[00m"
+    if [ -f "${fp_dir}/${name}" ]; then
+      read -r mkmdds < <(rsum -l6)
+      printf '%b\n' "    - File exists, renaming to \x1b[38;05;7m${fp_dir}/${name}_${mkmdds}.${ext}\x1b[00m"
+      ! ${DRY_RUN} && mv "${file_path}" "${fp_dir}/${name}_${mkmdds}.${ext}"
+    else
+      ! ${DRY_RUN} && mv "${file_path}" "${fp_dir}/${name}"
+    fi
+  done
+}
+main "${@}"

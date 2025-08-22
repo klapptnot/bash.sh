@@ -1,0 +1,18 @@
+#!/usr/bin/bash
+
+function main {
+  read -r BROWSER_DESKTOP_FILE < <(xdg-settings get default-web-browser)
+
+  [ -z "${BROWSER_DESKTOP_FILE}" ] && exit 1
+
+  local rpath="/usr/share/applications/${BROWSER_DESKTOP_FILE}"
+  ! [ -f "${rpath}" ] && rpath="${HOME}/.local/share/applications/${BROWSER_DESKTOP_FILE}"
+
+  read -r BROWSER_EXEC < <(grep -Po '(?<=^Exec=)[^\s]*' "${rpath}")
+
+  [ -z "${BROWSER_EXEC}" ] && exit 1
+
+  exec "${BROWSER_EXEC}" "${@}"
+}
+
+main "${@}"

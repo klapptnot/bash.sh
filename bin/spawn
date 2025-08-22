@@ -1,0 +1,94 @@
+#!/usr/bin/bash
+# 🔗 https://github.com/Klapptnot/bash.sh
+
+include barg.sh
+include logger.sh
+
+function time_parse {
+  IFS=':' read -r seconds minutes hours days
+
+  # Just to ensure that the seconds are the correct value
+  ((t_sec = (days * 24 * 60 * 60) + (hours * 60 * 60) + (minutes * 60) + seconds))
+  ((d = t_sec / 86400, h = (t_sec % 86400) / 3600, m = (t_sec % 3600) / 60, s = t_sec % 60))
+  local lll=('s')
+  local t_str_a=()
+  ((d > 0)) && t_str_a+=("${d} day${lll[1 - (d > 1)]}")
+  ((h > 0)) && t_str_a+=("${h} hour${lll[1 - (h > 1)]}")
+  ((m > 0)) && t_str_a+=("${m} min${lll[1 - (m > 1)]}")
+  ((s > 0)) && t_str_a+=("${s} sec${lll[1 - (s > 1)]}")
+  local t_str="${t_str_a[*]}"
+  unset -v lll d h m s t_str_a
+
+  printf '%s %s\n' "${t_sec}" "${t_str}"
+}
+
+function spawner {
+  sleep "${1:?}" || return
+  shift 1
+
+  if ${SPAWN_RESTART}; then
+    if pgrep "${SPAWN_EXEC_LINE[0]}" &> /dev/null; then
+      pkill --signal SIGKILL "${SPAWN_EXEC_LINE[0]}"
+    fi
+  fi
+
+  if "${SPAWN_AS_GNOME}"; then
+    XDG_CURRENT_DESKTOP=GNOME XDG_SESSION_DESKTOP=gnome exec "${@}" &> /dev/null
+  else
+    exec "${@}" &> /dev/null
+  fi
+}
+
+function main {
+  local _epilogs=("{acc}Note:\x1b[0m" "  \`-a/--run-at\` format is: seconds:minutes:hours:days, default: 0:0:0:0)")
+  barg::parse "${@}" << BARG
+  #[always]
+  meta {
+    summary: "Command line tool to spawn processes"
+    extargs: 'SPAWN_EXEC_LINE'
+    epilogs: '_epilogs'
+    reqargs: true
+    helpmsg: true
+  }
+
+  r/restart :flag => SPAWN_RESTART "Restart the process if it is already running"
+  a/run-at :str "0:0:0:0" => SPAWN_AT_TIME "Time to wait before spawning the process"
+  g/as-gnome :flag => SPAWN_AS_GNOME "Launch the process as a GNOME session"
+  u/uwsm :flag => SPAWN_WITH_UWSM "Spawn process using uwsm"
+  L/logger :int 4 => LOGGER_LEVEL "Logging level"
+BARG
+  barg::unload
+
+  if ${SPAWN_WITH_UWSM} && ! command -v uwsm &> /dev/null; then
+    log e 'The command uwsm is not an executable'
+    return 1
+  fi
+
+  if ! command -v "${SPAWN_EXEC_LINE[0]}" &> /dev/null; then
+    log e 'The command %s is not an executable' "${SPAWN_EXEC_LINE[0]}"
+    return 1
+  fi
+
+  ${SPAWN_WITH_UWSM} && {
+    SPAWN_EXEC_LINE=("uwsm" "app" "--" "${SPAWN_EXEC_LINE[@]}")
+    ((SPAWN_EXEC_LINE_COUNT+=3))
+  }
+
+  ((SPAWN_EXEC_LINE_COUNT > 1)) && printf -v cmd_line ' %q' "${SPAWN_EXEC_LINE[@]:1}"
+  local cmd_line="${SPAWN_EXEC_LINE[0]}${cmd_line}"
+
+  read -r t_sec t_str < <(time_parse <<< "${SPAWN_AT_TIME}")
+
+  if ((t_sec > 0)); then
+    if ${SPAWN_RESTART}; then
+      log i 'Process will be restarted in %s' "${t_str[*]}"
+    else
+      log i 'Process will be spawned in %s' "${t_str[*]}"
+    fi
+  fi
+
+  log d 'Command to run: %s' "${cmd_line}"
+  spawner "${t_sec}" "${SPAWN_EXEC_LINE[@]}" &
+}
+
+main "${@}"
