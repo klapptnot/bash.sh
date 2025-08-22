@@ -1,0 +1,255 @@
+#!/usr/bin/bash
+# 🔗 https://github.com/Klapptnot/bash.sh
+
+include logger.sh
+include str_escape.sh
+include xml_unescape.sh
+include url_params.sh
+include barg.sh
+
+# shellcheck disable=SC2034
+function main {
+  barg::parse "${@}" << BARG
+  #[always]
+  meta {
+    summary: 'Command line tool for Google Search'
+    extargs: 'EXA_QUERY'
+    reqargs: true
+    helpmsg: true
+    showdef: true
+  }
+
+  commands {list: "Show all presets and exit"}
+
+  @ t/timeout :num 5 => EXA_TIMEOUT "Number of seconds to wait for response"
+  @ T/tries :int 5 => EXA_TRIES "Number of attempts to search Google"
+  @ c/cookies :str => EXA_COOKIES "Cookies to send with the request"
+  @ u/user-agent :str "Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0" => EXA_USER_AGENT "User-agent to send with the request"
+  @ a/amount :int 10 => EXA_RESULT_AMOUNT "Number of results to return"
+  @ s/skip :int 0 => EXA_RESULT_START "Number of results skipped"
+  @ p/preset :str => EXA_PRESET "Use preset query format"
+  @ C/command :strs => EXA_LAUNCH_WITH "Run command with each URL as params"
+  @ j/json :flag => EXA_JSON_OUTPUT "Output results in JSON format"
+  @ m/monochrome :flag => EXA_MONOCROME "Disable color output"
+  @ L/logger :int 4 => LOGGER_LEVEL "Logger verbosity level, 0 to disable logs"
+BARG
+  barg::unload
+
+  if [ "${BARG_SUBCOMMAND}" == 'list' ]; then
+    if [ ! -f ~/.config/dotf/exa_presets.yaml ]; then
+      log e 'Failed to load presets: no such file ~/.config/dotf/exa_presets.yaml'
+      return 1
+    fi
+    mapfile -t names < <(grep -oP '^\w+' ~/.config/dotf/exa_presets.yaml)
+    mapfile -t presets < <(grep -oP '(?<=: ).*$' ~/.config/dotf/exa_presets.yaml)
+    for ((i = 0; i < ${#presets[@]}; i++)); do
+      if [[ -t 1 ]] && ! ${EXA_MONOCROME}; then
+        printf '\x1b[38;2;255;169;140m- Name: \x1b[38;2;255;232;184m%s\n' "${names[i]}"
+        printf '  \x1b[38;2;195;79;230mFormat: \x1b[38;2;189;147;249m%s\x1b[0m\n' "${presets[i]}"
+      else
+        printf -- '- Name: %s\n  Format: %s\n' "${names[i]}" "${presets[i]}"
+      fi
+    done
+    return 1
+  fi
+
+  # shellcheck disable=SC2153
+  local query="${EXA_QUERY[*]}"
+
+  if ((EXA_RESULT_AMOUNT < 1)) || ((EXA_RESULT_AMOUNT > 100)); then
+    log i 'Invalid amount of results (%s), defaulting to 10' "${EXA_RESULT_AMOUNT}"
+    EXA_RESULT_AMOUNT=10
+  fi
+
+  if [ -n "${EXA_PRESET}" ]; then
+    if [ ! -f ~/.config/dotf/exa_presets.yaml ]; then
+      log e 'Failed to load presets: no such file ~/.config/dotf/exa_presets.yaml'
+      return 1
+    fi
+    local preset_format='{{QUERY}}'
+    if ! preset_format=$(grep -oP "(?<=${EXA_PRESET}: ).*" ~/.config/dotf/exa_presets.yaml); then
+      log e 'Failed to get query from preset: no such preset "%s"' "${EXA_PRESET}"
+      return 1
+    fi
+    query="${preset_format//\{\{QUERY\}\}/${query}}"
+  fi
+
+  declare -A grequest=()
+  grequest['query']="${query}"
+  grequest['tries']="${EXA_TRIES}"
+  grequest['cookies']="${EXA_COOKIES}"
+  grequest['timeout']="${EXA_TIMEOUT}"
+  grequest['user_agent']="${EXA_USER_AGENT}"
+
+  # google params
+  grequest['g_num']="${EXA_RESULT_AMOUNT}"
+  grequest['g_start']="${EXA_RESULT_START}"
+
+  if ! google_search grequest; then
+    log e 'Failed to search google'
+    return 1
+  fi
+
+  if ((GOOGLE_RESULTS == 0)); then
+    log i 'There are no results (have you provided valid cookies?)'
+    return 1
+  fi
+
+  if ((${#EXA_LAUNCH_WITH[@]} > 0)); then
+    if ! command -v "${EXA_LAUNCH_WITH[0]}" &> /dev/null; then
+      log e 'Command %s not found or not executable' "${EXA_LAUNCH_WITH[0]}"
+      return 1
+    fi
+
+    placeholder_index=-1
+    for i in "${!EXA_LAUNCH_WITH[@]}"; do
+      if [[ "${EXA_LAUNCH_WITH[i]}" == '{}' ]]; then
+        placeholder_index="${i}"
+        break
+      fi
+    done
+
+    # index -1 and also index 0 is the command
+    if ((placeholder_index < 1)); then
+      log i "Launching command..."
+      exec "${EXA_LAUNCH_WITH[@]}" "${GOOGLE_RESULT_LINKS[@]}"
+    fi
+
+    log i "Launching commands..."
+    for link in "${GOOGLE_RESULT_LINKS[@]}"; do
+      cmd=("${EXA_LAUNCH_WITH[@]}")
+      cmd[placeholder_index]="${link}"
+      log i 'Running: %s' "${cmd[*]}"
+      "${cmd[@]}" > /dev/null &
+    done
+
+    return
+  fi
+
+  if ${EXA_JSON_OUTPUT}; then
+    local buf=()
+    for ((i = 0; i < GOOGLE_RESULTS; i++)); do
+      read -r escaped_title < <(str_escape <<< "${GOOGLE_RESULT_TITLES[i]}")
+      buf+=("{\"what\":\"${escaped_title}\",\"link\":\"${GOOGLE_RESULT_LINKS[i]}\"}")
+    done
+    local json=""
+    IFS=, json="${buf[*]}"
+    IFS=, printf "[%s]\n" "${json}"
+    return 0
+  fi
+
+  for ((i = 0; i < GOOGLE_RESULTS; i++)); do
+    local title="${GOOGLE_RESULT_TITLES[i]}"
+    [ -n "${title//[!:]/}" ] && title="\"${title//\"/\\\"}\""
+    if [[ -t 1 ]] && ! ${EXA_MONOCROME}; then
+      printf '\x1b[38;2;255;169;140m- What: \x1b[38;2;255;232;184m%s\n' "${title}"
+      printf '  \x1b[38;2;195;79;230mLink: \x1b[38;2;189;147;249m%s\x1b[0m\n' "${GOOGLE_RESULT_LINKS[i]}"
+    else
+      printf -- '- What: %s\n  Link: %s\n' "${title}" "${GOOGLE_RESULT_LINKS[i]}"
+    fi
+  done
+}
+
+# shellcheck disable=SC2034
+function google_search {
+  declare -n request="${1}"
+
+  if [ -z "${!request[*]}" ]; then
+    log e 'No request data available, request skipped'
+    return 1
+  fi
+
+  if ((${#request[query]} < 1)); then
+    log e 'Query cannot be empty'
+    return 1
+  fi
+
+  declare -A google_url_params=()
+  google_url_params['udm']=14                         # Only web search results
+  google_url_params['q']="${request[query]}"          # Search Query
+  google_url_params['num']="${request[g_num]:-10}"    # Amount of results
+  google_url_params['start']="${request[g_start]:-0}" # Start from the N result
+  google_url_params['dpf']="${request[g_dpf]:-1}"     # Results page number
+
+  read -r google_req_url < <(url_params google_url_params)
+  google_req_url="https://www.google.com/search?${google_req_url:?}"
+
+  local __attempts=0
+  local http_codes=()
+  local in_error=false
+  while true; do
+    if [ "${__attempts}" -ge "${request[tries]:-5}" ]; then
+      log e 'Stopped after %d failed attempts. Try again later' "${request[tries]:-5}"
+      in_error=true
+      break
+    fi
+    ((__attempts++))
+
+    response_body=$(
+      curl -Ss "${google_req_url}" --compressed \
+        -H "user-agent: ${request[user_agent]}" \
+        -H 'accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
+        -H 'accept-language: en-US,en;q=0.5' \
+        -H 'accept-encoding: gzip, deflate' \
+        -H 'referer: https://www.google.com/' \
+        -H 'sec-ch-prefers-color-scheme: dark' \
+        -H 'sec-ch-ua-platform: "Linux"' \
+        -H 'dnt: 1' \
+        -H 'sec-gpc: 1' \
+        -H 'connection: disconnect' \
+        -H "cookie: ${request[cookies]}" \
+        -H 'upgrade-insecure-requests: 1' \
+        -H 'sec-fetch-dest: document' \
+        -H 'sec-fetch-mode: navigate' \
+        -H 'sec-fetch-site: none' \
+        -H 'sec-fetch-user: ?1' \
+        -H 'priority: u=0, i' \
+        -H 'sec-fetch-site: same-origin' \
+        -H 'x-browser-year: 2025' \
+        --max-time "${request[timeout]:-5}" \
+        --write-out '\n%{http_code}' \
+        2> >(sed 's/curl: ([0-9]*)/[INFO]/' >&2)
+    )
+
+    local http_code="${response_body: -3}"
+    http_codes+=("${http_code}")
+
+    if ((100 <= http_code && http_code <= 199)); then
+      log d 'HTTP %s -> Google informative... skipped. %d attempt.' "${http_code}" "${__attempts}"
+      continue
+    elif ((200 <= http_code && http_code <= 299)); then
+      log d 'HTTP %s -> Google successful. %d attempt.' "${http_code}" "${__attempts}"
+      if [[ "${response_body}" == *'<script src="https://www.google.com/recaptcha/api.js" async defer></script>'* ]]; then
+        log e "HTTP %s -> Google Captcha. Change any of proxy, user-agent, cookies or try again later. %d attempt." "${http_code}" "${__attempts}"
+        in_error=true
+      fi
+      break
+    else
+      if ((300 <= http_code && http_code <= 399)); then
+        log e 'HTTP %s -> Google redirection, try again changing user-agent. %d attempt.' "${http_code}" "${__attempts}"
+      elif ((400 <= http_code && http_code <= 499)); then
+        log e 'HTTP %s -> Client error, check the data and try again. %d attempt.' "${http_code}" "${__attempts}"
+      elif ((500 <= http_code && http_code <= 599)); then
+        log e 'HTTP %s -> Server error, try again later. %d attempt.' "${http_code}" "${__attempts}"
+      else
+        log d 'HTTP %s -> Invalid code. %d attempt.' "${http_code}" "${__attempts}"
+        continue
+      fi
+      in_error=true
+    fi
+  done
+
+  log d 'Record of HTTP codes [%s]' "${http_codes[*]}"
+  ${in_error} && return 1
+
+  mapfile -t GOOGLE_RESULT_TITLES < <(grep -oP '(?<=<br><h3 class="LC20lb MBeuO DKV0Md">)[^<]*(?=<)' <<< "${response_body}" | xml_unescape)
+  mapfile -t GOOGLE_RESULT_LINKS < <(grep -oP '(?<=><a jsname="UWckNb" href=")[^ ]*(?=")' <<< "${response_body}")
+
+  declare -g GOOGLE_RESULTS=${#GOOGLE_RESULT_LINKS[@]}
+  declare -g GOOGLE_RESULT_TITLES
+  declare -g GOOGLE_RESULT_LINKS
+
+  return 0
+}
+
+main "${@}"

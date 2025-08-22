@@ -1,0 +1,23 @@
+#!/usr/bin/bash
+# shellcheck disable=SC2015,SC1090
+export BASHLIB_SCRIPTS=~/.local/lib/bash.sh
+
+# A function to source library scripts from a predefined path.
+# This makes scripts available to both interactive and non-interactive shells.
+#
+# Usage: include <script_name> [arguments]
+#   <script_name>: The name of the script file to source.
+#   [arguments]: Any arguments to pass to the sourced script.
+function include {
+  local __="${1}"
+
+  [[ -f "${__}" ]] \
+    || read -r __ < <(PATH="${BASHLIB_SCRIPTS}" type -p "${__}" 2>/dev/null)
+
+  [ -z "${__}" ] && {
+    printf 'include: %s not found\n' "${1}" >&2
+    exit 127
+  }
+
+  source "${__}" "${@:2}"
+}

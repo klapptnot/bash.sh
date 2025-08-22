@@ -1,0 +1,375 @@
+#!/usr/bin/bash
+# 🔗 https://github.com/Klapptnot/bash.sh
+
+include barg.sh
+include rsum.sh
+include logger.sh
+
+function miku::loves::you::back {
+  # This function is just an easter egg
+  # whenever the click action is "I love Hatsune Miku"
+  NOTIFY_POSITIONAL_ARGS=(
+    "愛をこめて、"
+    "初音ミクはみんなのことが大好きだよ！"
+    "いつも応援してくれてありがとう！"
+    "これからも一緒に楽しい時間を過ごそうね！"
+  )
+  NOTIFY_BOTH_CLICK_ACTION="xdg-open https://www.youtube.com/@hatsunemiku"
+  NOTIFY_BOTH_ACTIONS=(
+    "It's me!:xdg-open https://www.youtube.com/watch?v=NocXEwsJGOQ"
+    "Come with me!:xdg-open https://www.youtube.com/watch?v=jsQXgDZIIrY"
+    "I love you!:xdg-open https://www.youtube.com/watch?v=RKtoreimcQ8"
+  )
+
+  NOTIFY_DBUS_APP_NAME="初音ミク"
+  NOTIFY_DBUS_REPLACE_ID=0
+  NOTIFY_DBUS_EXPIRE_TIME=5000
+  NOTIFY_DBUS_SOUND="/usr/share/sounds/freedesktop/stereo/bell.ogg"
+  NOTIFY_DBUS_CATEGORY="event"
+  NOTIFY_DBUS_PERSIST=false
+  NOTIFY_DBUS_ACTION_ICON=false
+  NOTIFY_DBUS_ACTION_REMOVE=""
+  NOTIFY_DBUS_ICON="miku-heart"
+  NOTIFY_DBUS_DESKTOP_ENTRY="miku"
+  send::dbus
+}
+
+function send::dbus {
+  local notification_title="${NOTIFY_POSITIONAL_ARGS[0]}"
+
+  local notification_body
+  IFS=$'\n' notification_body="${NOTIFY_POSITIONAL_ARGS[*]:1}"
+  notification_body="${notification_body@E}"
+
+  local actions_lines=()
+  [ -n "${NOTIFY_BOTH_CLICK_ACTION}" ] && {
+    actions_lines+=("'default','click-action'")
+  }
+
+  local actions_commands=()
+  for i in "${!NOTIFY_BOTH_ACTIONS[@]}"; do
+    IFS=':' read -r label command <<<"${NOTIFY_BOTH_ACTIONS[i]}"
+    read -r random < <(rsum)
+    actions_lines+=("\"${random}=${i}\",${label@Q}")
+    actions_commands+=("${command}")
+  done
+
+  local actions_str
+  IFS=',' actions_str="[${actions_lines[*]}]"
+
+  local hints_data=()
+  case "${NOTIFY_BOTH_PRIORITY}" in
+  "high" | "max") hints_data[0]=2 ;;
+  "low" | "min") hints_data[0]=0 ;;
+  *) hints_data[0]=1 ;;
+  esac
+  hints_data[0]="\"urgency\": <byte ${hints_data[0]}>"
+
+  ${NOTIFY_DBUS_PERSIST} && hints_data+=("'resident': <true>")
+  ${NOTIFY_DBUS_ACTION_ICON} && hints_data+=("'action-icons': <true>")
+
+  [ -n "${NOTIFY_DBUS_DESKTOP_ENTRY}" ] && hints_data+=("'desktop-entry': <${NOTIFY_DBUS_DESKTOP_ENTRY@Q}>")
+  [ -n "${NOTIFY_DBUS_CATEGORY}" ] && hints_data+=("'category': <${NOTIFY_DBUS_CATEGORY@Q}>")
+
+  [ -n "${NOTIFY_DBUS_SOUND}" ] && {
+    if [ "${NOTIFY_DBUS_SOUND}" == '-1' ]; then
+      hints_data+=("'suppress-sound': <true>")
+    elif [ -e "${NOTIFY_DBUS_SOUND}" ]; then
+      hints_data+=("'sound-file': <${NOTIFY_DBUS_SOUND@Q}>")
+    else
+      hints_data+=("'sound-name': <${NOTIFY_DBUS_SOUND@Q}>")
+    fi
+  }
+
+  local data_dict
+  IFS=',' data_dict="{${hints_data[*]}}"
+
+  IFS='( ,)' read -r _ _ notif_id _ < <(
+    gdbus call --session \
+      --dest org.freedesktop.Notifications \
+      --object-path /org/freedesktop/Notifications \
+      --method org.freedesktop.Notifications.Notify \
+      -- \
+      "${NOTIFY_DBUS_APP_NAME}" \
+      "${NOTIFY_DBUS_REPLACE_ID:-0}" \
+      "${NOTIFY_DBUS_ICON}" \
+      "${notification_title}" \
+      "${notification_body}" \
+      "${actions_str//\'\\\'\'/\\\'}" \
+      "${data_dict//\'\\\'\'/\\\'}" \
+      "int32 ${NOTIFY_DBUS_EXPIRE_TIME:--1}"
+  )
+  if [ -n "${notif_id}" ]; then
+    log i "Notification send successfully (dbus, ID=${notif_id})"
+  else
+    log e "Failed to send notification (dbus)"
+    return
+  fi
+
+  if ((${#actions_commands[@]} > 0)) || [ -n "${NOTIFY_BOTH_CLICK_ACTION}" ]; then
+    dbus::notification_eventloop "${notif_id}" "${actions_commands[@]}" &> /dev/null &
+    log i "Notification event loop started for ID ${notif_id}"
+  fi
+}
+
+function dbus::notification_eventloop {
+  local notif_id="${1}"
+  shift 1
+  local commands=("${@}")
+  read -r fd < <(mktemp --dry-run --tmpdir notify.XXXXXX) || return 1
+  mkfifo "${fd}"
+
+  gdbus monitor --session \
+    --dest org.freedesktop.Notifications \
+    --object-path /org/freedesktop/Notifications >"${fd}" &
+  local pid="${!}"
+
+  local invoked=false
+  while IFS=', ' read -r event _ id data; do
+    [ "${id}" != "${notif_id}" ] && continue
+    case "${event}" in
+    ActionInvoked)
+      read -r _ # Consume the next line to avoid double processing
+      invoked=true
+      if [ "${data}" == "'default'" ]; then
+        case "${NOTIFY_BOTH_CLICK_ACTION}" in
+          "I love Hatsune Miku") miku::loves::you::back ;;
+          # "I miss Hatsune Miku") miku::hug::you ;;
+          # "I need a Miku song")  miku::play::song ;;
+          *) bash -c "${NOTIFY_BOTH_CLICK_ACTION}" &> /dev/null &
+        esac
+      else
+        local i="${data:18:-1}"
+        bash -c "${commands[i]}" &>/dev/null &
+      fi
+      ;;
+    NotificationClosed)
+      if ! ${invoked} && [ -n "${NOTIFY_DBUS_ACTION_REMOVE}" ]; then
+        bash -c "${NOTIFY_DBUS_ACTION_REMOVE}" &>/dev/null &
+      fi
+      kill "${pid}"
+      ;;
+    esac
+  done < <(sed -nu 's/^.*org\.freedesktop\.Notifications\.\([A-Za-z]\+\)\ (\(.*\))$/\1 \2/p' "${fd}")
+
+  rm -f "${fd}"
+}
+
+function send::ntfy {
+  if [ -z "${NOTIFY_NTFY_TOPIC}" ]; then
+    [ ! -e "${HOME}/.notify.conf" ] && {
+      log e "Config file not found and topic was not specified"
+      exit
+    }
+    {
+      read -r NOTIFY_NTFY_TOPIC
+    } <"${HOME}/.notify.conf"
+  fi
+  if [ -z "${NOTIFY_NTFY_TOPIC}" ]; then
+    log e "Topic for ntfy.sh is empty"
+    return
+  fi
+
+  local notification_title="${NOTIFY_POSITIONAL_ARGS[0]}"
+
+  local priority=3
+  case "${NOTIFY_BOTH_PRIORITY}" in
+  "max") priority=5 ;;
+  "high") priority=4 ;;
+  "def") priority=3 ;;
+  "low") priority=2 ;;
+  "min") priority=1 ;;
+  esac
+
+  local notification_body
+  IFS=$'\n' notification_body="${NOTIFY_POSITIONAL_ARGS[*]:1}"
+  local notification_body="${notification_body@E}"
+
+  local tags
+  IFS=, tags="${NOTIFY_NTFY_TAGS[*]}"
+
+  local actions
+  IFS=';' actions="${NOTIFY_BOTH_ACTIONS[*]}"
+
+  local args_to_curl=(
+    -H "Title: ${notification_title}"
+    -H "Priority: ${priority}"
+    -H "Markdown: yes"
+    -H "Connection: close"
+  )
+
+  [ -n "${NOTIFY_NTFY_EMAIL}" ] && args_to_curl+=(-H "Email: ${NOTIFY_NTFY_EMAIL}")
+  [ -n "${NOTIFY_BOTH_CLICK_ACTION}" ] && args_to_curl+=(-H "Click: ${NOTIFY_BOTH_CLICK_ACTION}")
+  [ -n "${actions}" ] && args_to_curl+=(-H "Actions: ${actions}")
+  [ -n "${tags}" ] && args_to_curl+=(-H "Tags: ${tags}")
+  [ -n "${NOTIFY_NTFY_DEFER}" ] && args_to_curl+=(-H "At: ${NOTIFY_NTFY_DEFER}")
+
+  local attached_filename
+  if [ -n "${NOTIFY_NTFY_ATTACHMENT}" ]; then
+    # Assume it is an URL
+    if [ ! -e "${NOTIFY_NTFY_ATTACHMENT}" ]; then
+      args_to_curl+=(-H "Attach: ${NOTIFY_NTFY_ATTACHMENT}")
+    else
+      read -r attached_filename < <(basename "${NOTIFY_NTFY_ATTACHMENT}")
+      args_to_curl+=(-H "Message: ${notification_body}")
+      args_to_curl+=(-H "Filename: ${attached_filename}")
+      args_to_curl+=(-T "${NOTIFY_NTFY_ATTACHMENT}")
+    fi
+  else
+    args_to_curl+=(--data "${notification_body}")
+  fi
+
+  if curl -sSL "${args_to_curl[@]}" "https://ntfy.sh/${NOTIFY_NTFY_TOPIC}"; then
+    log i "Notification send (ntfy.sh)"
+  else
+    log e "Notification not send (ntfy.sh)"
+  fi
+}
+
+function pull::ntfy {
+  if [ -z "${NOTIFY_NTFY_TOPIC}" ]; then
+    [ ! -e "${HOME}/.notify.conf" ] && {
+      log e "Config file not found and topic was not specified"
+      exit
+    }
+    {
+      read -r NOTIFY_NTFY_TOPIC
+    } <"${HOME}/.notify.conf"
+  fi
+  if [ -z "${NOTIFY_NTFY_TOPIC}" ]; then
+    log e "Topic for ntfy.sh is empty"
+    return
+  fi
+
+  curl -sSL "https://ntfy.sh/${NOTIFY_NTFY_TOPIC}/json"
+}
+
+function show_help {
+  local help_lines=(
+    "\x1b[1;34mnotify\x1b[0m: Send notifications via D-Bus and ntfy.sh service"
+    ""
+    "\x1b[1;33mUsage:\x1b[0m"
+    "  notify send [OPTIONS] <SUMMARY> [BODY...]"
+    "  notify pull [OPTIONS]"
+    "  notify help"
+    ""
+    "\x1b[1;33mSubcommands:\x1b[0m"
+    "  \x1b[1;32msend\x1b[0m    Send a notification"
+    "  \x1b[1;32mpull\x1b[0m    Pull and display notifications from ntfy.sh"
+    "  \x1b[1;32mhelp\x1b[0m    Show this help message"
+    ""
+    "\x1b[1;33mGeneral Options:\x1b[0m"
+    "  \x1b[1;36m-h, --handler\x1b[0m \x1b[33m{dbus|ntfy|both}\x1b[0m        Choose notification backend (default: dbus)"
+    "  \x1b[1;36m-p, --priority\x1b[0m \x1b[33m{max|high|def|low|min}\x1b[0m Set notification priority (default: def)"
+    "  \x1b[2mNote: Action formats are handler-dependent:\x1b[0m"
+    "  \x1b[2m  D-Bus: 'label:command' (e.g., 'Open:firefox')\x1b[0m"
+    "  \x1b[2m  ntfy:  URLs only (e.g., 'https://example.com')\x1b[0m"
+    ""
+    "\x1b[1;33mSend Options:\x1b[0m"
+    "  \x1b[1;36m-a, --action\x1b[0m \x1b[33mACTION\x1b[0m    Notification actions/buttons (can be repeated)"
+    "  \x1b[1;36m-c, --click\x1b[0m \x1b[33mACTION\x1b[0m     Action to perform when notification is clicked"
+    ""
+    "\x1b[1;33mD-Bus Specific Options:\x1b[0m"
+    "  \x1b[1;36m-n, --app-name\x1b[0m \x1b[33mNAME\x1b[0m            Application name (default: 'notify')"
+    "  \x1b[1;36m-d, --desktop\x1b[0m \x1b[33mENTRY\x1b[0m            Desktop entry name"
+    "  \x1b[1;36m-i, --icon\x1b[0m \x1b[33mICON\x1b[0m                Notification icon (default: 'notification-active')"
+    "  \x1b[1;36m-I, --replace\x1b[0m \x1b[33mID\x1b[0m               Replace existing notification with ID (default: 0)"
+    "  \x1b[1;36m-s, --sound\x1b[0m \x1b[33mSOUND\x1b[0m              Sound file/name (use -1 to suppress sound)"
+    "  \x1b[1;36m-e, --expire\x1b[0m \x1b[33mMS\x1b[0m                Expiration time in milliseconds (default: -1 = no expiry)"
+    "  \x1b[1;36m-r, --remove\x1b[0m \x1b[33mACTION\x1b[0m            Action to remove notification"
+    "  \x1b[1;36m-C, --category\x1b[0m \x1b[33mCATEGORY\x1b[0m        Notification category"
+    "  \x1b[1;36m-v, --as-icons\x1b[0m                 Treat action labels as icon names"
+    "  \x1b[1;36m-P, --persist\x1b[0m                  Keep notification visible after actions"
+    ""
+    "\x1b[1;33mntfy.sh Specific Options:\x1b[0m"
+    "  \x1b[1;36m-A, --attach\x1b[0m \x1b[33mURL|FILE\x1b[0m         Attach file or URL to notification"
+    "  \x1b[1;36m-t, --tags\x1b[0m \x1b[33mTAG\x1b[0m                Notification tags (can be repeated)"
+    "  \x1b[1;36m-E, --email\x1b[0m \x1b[33mADDRESS\x1b[0m           Send notification as email to address"
+    "  \x1b[1;36m-D, --defer\x1b[0m \x1b[33mTIME\x1b[0m              Schedule notification for specific time"
+    "  \x1b[1;36m-T, --topic\x1b[0m \x1b[33mTOPIC\x1b[0m             Override configured ntfy.sh topic"
+    ""
+    "\x1b[1;33mPull Options:\x1b[0m"
+    "  \x1b[1;36m-T, --topic\x1b[0m \x1b[33mTOPIC\x1b[0m             Specify ntfy.sh topic to pull from"
+    ""
+    "\x1b[1;33mExamples:\x1b[0m"
+    "  \x1b[2m# Send to both D-Bus and ntfy.sh\x1b[0m"
+    "  notify send -h both 'Build Complete' 'Project compiled successfully'"
+    ""
+    "  \x1b[2m# Send high-priority ntfy notification with tags\x1b[0m"
+    "  notify send -h ntfy -p high -t server -t alert 'Server Down' 'Check immediately'"
+    ""
+    "  \x1b[2m# D-Bus notification with custom icon and persistence\x1b[0m"
+    "  notify send -h dbus -i 'dialog-warning' -P 'Warning' 'Low disk space'"
+    ""
+    "  \x1b[2m# Pull notifications as JSON\x1b[0m"
+    "  notify pull -T 'mytopic'"
+    ""
+    "  \x1b[2m# Schedule notification for later\x1b[0m"
+    "  notify send -h ntfy -D '2024-12-25 09:00' 'Reminder' 'Check Updates!'"
+  )
+
+  printf '%b\n' "${help_lines[@]}"
+}
+
+function main {
+  readonly LOGGER_LEVEL="${LOGGER_LEVEL:-4}"
+  barg::parse "${@}" <<EOF || BARG_SUBCOMMAND='help'
+  meta {
+    prognam: 'notify'
+    extargs: 'NOTIFY_POSITIONAL_ARGS'
+    reqargs: true
+    helpmsg: true
+  }
+  commands {
+    *send: "Send a notification"
+    pull: "Pull and display notifications from ntfy.sh"
+    help: "Show this help message"
+  }
+
+  @send h/handler [
+    "dbus" "ntfy" "both"
+  ] => NOTIFY_NOTIFICATION_HANDLER
+
+  @send p/priority [
+    "def" "max" "high" "low" "min"
+  ] => NOTIFY_BOTH_PRIORITY
+
+  @send a/action :strs => NOTIFY_BOTH_ACTIONS
+  @send c/click :str => NOTIFY_BOTH_CLICK_ACTION
+
+  @send n/app-name :str "notify" => NOTIFY_DBUS_APP_NAME
+  @send d/desktop :str => NOTIFY_DBUS_DESKTOP_ENTRY
+  @send i/icon :str "notification-active" => NOTIFY_DBUS_ICON
+  @send I/replace :int 0 => NOTIFY_DBUS_REPLACE_ID
+  @send s/sound :str => NOTIFY_DBUS_SOUND
+  @send e/expire :int -1 => NOTIFY_DBUS_EXPIRE_TIME
+  @send r/remove :str => NOTIFY_DBUS_ACTION_REMOVE
+  @send C/category :str => NOTIFY_DBUS_CATEGORY
+  @send v/as-icons :flag => NOTIFY_DBUS_ACTION_ICON
+  @send P/persist :flag => NOTIFY_DBUS_PERSIST
+
+  @send A/attach :str => NOTIFY_NTFY_ATTACHMENT
+  @send t/tags :strs => NOTIFY_NTFY_TAGS
+  @send E/email :str => NOTIFY_NTFY_EMAIL
+  @send D/defer :str => NOTIFY_NTFY_DEFER
+  @send T/topic :str => NOTIFY_NTFY_TOPIC
+
+  @pull T/topic :str => NOTIFY_NTFY_TOPIC
+EOF
+  barg::unload
+
+  case "${BARG_SUBCOMMAND}" in
+  send)
+    if [ "${NOTIFY_NOTIFICATION_HANDLER}" == "both" ]; then
+      send::dbus
+      send::ntfy
+    else
+      send::"${NOTIFY_NOTIFICATION_HANDLER}"
+    fi
+    ;;
+  pull) pull::ntfy ;;
+  help) show_help ;;
+  esac
+}
+
+main "${@}"

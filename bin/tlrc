@@ -1,0 +1,138 @@
+#!/usr/bin/bash
+
+include logger.sh
+include barg.sh
+
+declare -ag lyric_lines=()
+declare -g mpv_pid=''
+
+function cleanup {
+  log i "Cleaning up..."
+  kill "${mpv_pid}" > /dev/null 2>&1
+  unlink "${LYR_MPV_SOCKET:?}"
+  kill 0 > /dev/null 2>&1
+}
+
+function mpv_socat {
+  # shellcheck disable=SC2059
+  printf "${1}\n" "${@:1}" | socat - "${LYR_MPV_SOCKET}"
+}
+
+function record_timestamps {
+  local output_file="${1}"
+  local i=0
+
+  local last_timestamp=0
+  local timestamps=()
+  local timestamped=()
+  while read -rsN 1 c && ((i <= ${#lyric_lines[@]})); do
+    case "${c}" in
+      'o') ;; # fall-through (add timed line)
+      'p')
+        mpv_socat "cycle pause"
+        continue
+        ;;
+      'i')
+        timestamps[i]='0.0'
+        ((i > 0)) && {
+          printf '\x1b[1A\x1b[0G\x1b[0K'
+          ((i--))
+          last_timestamp="${timestamps[(i - 1)]:-0.0}"
+          true
+        } || last_timestamp='0.0'
+        mpv_socat '{"command": ["set_property", "time-pos", %d]}' "${last_timestamp}" &> /dev/null
+        continue
+        ;;
+      'r') return 1 ;;
+      *) continue ;;
+    esac
+
+    local elapsed_sec
+    read -r elapsed_sec < <(
+      mpv_socat '{"command": ["get_property", "time-pos"]}' \
+        | jq -r '.data'
+    )
+
+    # Handle null/error cases
+    [[ "${elapsed_sec}" == "null" || -z "${elapsed_sec}" ]] && elapsed_sec="0.00"
+
+    timestamps[i]="${elapsed_sec}"
+
+    local sec_with_ms
+    read -r sec_with_ms < <(awk "BEGIN {printf \"%.2f\", ${elapsed_sec} % 60}")
+
+    elapsed_sec="${elapsed_sec%%.*}"
+    local min=$((elapsed_sec / 60))
+
+    printf -v tmped '[%02d:%05.2f] %s' "${min}" "${sec_with_ms}" "${lyric_lines[i]}"
+    timestamped[i]="${tmped}"
+
+    log i '%s' "${tmped}"
+    ((i++))
+  done
+
+  log i 'All lyrics lines have been timestamped.'
+
+  printf '[00:00.00] \n' > "${output_file}"
+  printf '%s\n' "${timestamped[@]}" >> "${output_file}"
+}
+
+function main {
+  # shellcheck disable=SC2034
+  LOGGER_LEVEL=4
+
+  barg::parse "${@}" << 'BARG'
+  #[always]
+  meta {
+    summary: "Create a timed lyrics file"
+    helpmsg: true
+  }
+
+  ! s/song :str  => LYR_SONG_FILE "Audio file for playback"
+  ! i/input :str  => LYR_INPUT_FILE "Input text file with lyrics"
+  ! o/output :str => LYR_OUTPUT_FILE "Output file for timed lyrics"
+  m/mpv-socket :str "/tmp/mpv_socket" => LYR_MPV_SOCKET "Socket for mpv player"
+  f/force :flag => LYR_FILE_OVERWRITE "Overwrite output file if not empty"
+BARG
+  barg::unload
+
+  if [[ ! -f "${LYR_INPUT_FILE}" || ! -f "${LYR_SONG_FILE}" ]]; then
+    log e "Missing input file or song file. Please check paths."
+    exit 1
+  fi
+
+  mapfile -t lyric_lines < "${LYR_INPUT_FILE}"
+
+  if [[ ${#lyric_lines[@]} -eq 0 ]]; then
+    log e "Input file is empty."
+    exit 1
+  fi
+
+  log i "Output will be saved to: %s" "${LYR_OUTPUT_FILE}"
+  if [[ -s "${LYR_OUTPUT_FILE}" ]]; then
+    if ! ${LYR_FILE_OVERWRITE}; then
+      log e "Output file exists and is not empty."
+      log i 'Use -f/--force to overwrite this file.'
+      exit 1
+    fi
+    log i 'Output file is not empty, will be overwritten.'
+  fi
+
+  log i "Playing song: %s" "${LYR_SONG_FILE}"
+
+  trap cleanup SIGINT
+
+  mpv --no-video --input-ipc-server="${LYR_MPV_SOCKET}" "${LYR_SONG_FILE}" &> /dev/null &
+  mpv_pid="${!}"
+
+  while true; do
+    mpv_socat '{ "command": ["seek", "-9999"] }' &> /dev/null \
+      && clear && log i 'Press o key to timestamp the next lyric line...'
+
+    record_timestamps "${LYR_OUTPUT_FILE}" && break
+  done
+
+  kill -s SIGINT 0 > /dev/null 2>&1
+}
+
+main "${@}"

@@ -1,0 +1,152 @@
+#!/usr/bin/bash
+# 🔗 https://github.com/Klapptnot/bash.sh
+
+include barg.sh
+
+function wayshot::exit_msg {
+  printf '\x1b[38;5;1m[ ERR ]\x1b[00m %b\n' "${*}" >&2
+  exit 1
+}
+
+function wayshot::indicate_take {
+  slurp -b#67469860 &
+  local pid=${!}
+  sleep 0.2
+  kill -9 ${pid}
+  jobs &> /dev/null
+}
+
+function wayshot::take_capture {
+  grim -t png "${@:2}" - 2> /dev/null > "${1}" || {
+    wayshot::exit_msg 'Unable to take a screen capture'
+  }
+
+  if ${WAYSHOT_UPSCALE}; then
+    magick "${1}" -filter Lanczos -resize 200% "${1}" || {
+      wayshot::exit_msg 'Unable to upscale the screenshot, check the output of "magick" command'
+    }
+  fi
+
+  "${WAYSHOT_NOCLIPBOARD}" && return
+
+  local mimetype="image/"
+
+  if [ "${WAYSHOT_FILETYPE}" != "ppm" ]; then
+    mimetype+="${WAYSHOT_FILETYPE}"
+  else
+    mimetype+="x-portable-pixmap"
+  fi
+
+  # Only try clipboard if not disabled
+  wl-copy --type "${mimetype}" < "${1}"
+}
+
+function wayshot::shot_screen {
+  wayshot::indicate_take &
+  wayshot::take_capture "${1}.png" "${@:2}"
+}
+
+function wayshot::shot_region {
+  local pos_n_size="${WAYSHOT_DISPLAY_REGION}"
+  if [[ -z "${WAYSHOT_DISPLAY_REGION}" ]]; then
+    hyprpicker -rdtzn &> /dev/null &
+    local pid=${!}
+    disown "${pid}"
+    sleep 0.10
+    read -r pos_n_size < <(
+      slurp -d -b"${WAYSHOT_REGION_BG_COLOR}" -c"${WAYSHOT_REGION_BORDER_COLOR}" 2> /dev/null
+    )
+    kill -9 "${pid}"
+  fi
+
+  if [ -n "${pos_n_size}" ]; then
+    wayshot::indicate_take &
+    wayshot::take_capture "${1}.png" -g "${pos_n_size}" "${@:2}"
+  fi
+
+  [ -z "${pos_n_size}" ] && wayshot::exit_msg 'Nothing selected, abort'
+}
+
+function wayshot::shot_window {
+  {
+    read -r pos_n_size
+    read -r WCLASS
+  } < <(
+    hyprctl activewindow -j \
+      | jq -rM '(.at[0]|tostring) + "," + (.at[1]|tostring) + " " + (.size[0]|tostring) + "x" + (.size[1]|tostring) + "\n" + .class'
+  )
+
+  [ "${pos_n_size}" == 'null,null nullxnull' ] && wayshot::exit_msg 'No window found, abort'
+  wayshot::indicate_take &
+  wayshot::take_capture "${1}_${WCLASS}.png" -g "${pos_n_size}" "${@:2}"
+}
+
+function main {
+  read -r USER_PICS_DIR < <(xdg-user-dir PICTURES)
+
+  for cmd in grim slurp hyprctl xdg-user-dir wl-paste; do
+    read -r COMMAND < <(type -p "${cmd}")
+    if [ -z "${COMMAND}" ]; then
+      wayshot::exit_msg 'Command "%s" not found in PATH\n' "${COMMAND}"
+    fi
+  done
+  unset COMMAND
+
+  local _epilog_lines=(
+    '{acc}Examples:\x1b[0m'
+    '  wayshot'
+    '  wayshot region --cursor'
+    '  wayshot window -t jpeg -f ~/Desktop'
+    '  wayshot screen --no-clipboard -n "capture_%H%M%S"'
+    '  wayshot region -B "#ff000040" -C "#00ff00ff"'
+  )
+
+  barg::parse "${@}" << EOF
+  #[always]
+  meta {
+    summary: 'Wayland screenshot utility'
+    prognam: 'wayshot'
+    extargs: 'WAYSHOT_EXTRAS'
+    epilogs: '_epilog_lines'
+    helpmsg: true
+    showdef: true
+    reqcmds: true
+  }
+
+  commands {
+    screen: "Capture entire screen"
+    region: "Capture selected region"
+    window: "Capture selected window"
+  }
+
+  c/cursor :flag => WAYSHOT_ENABLE_CURSOR "Include cursor in screenshot"
+  b/no-clipboard :flag => WAYSHOT_NOCLIPBOARD 'Do not copy to clipboard'
+  u/upscale :flag => WAYSHOT_UPSCALE "Upscale by 200% (requires image magick CLI)"
+  t/filetype ["png" "ppm" "jpeg"] => WAYSHOT_FILETYPE "File format: png, ppm, jpeg"
+  f/folder :str "${USER_PICS_DIR}/Screenshots" => WAYSHOT_FOLDER "Output folder"
+  n/filename :str "screenshot_%Y-%m-%d-%H-%M-%S" => WAYSHOT_FILENAME_FORMAT "Filename format"
+
+  @region r/region :str "" => WAYSHOT_DISPLAY_REGION "Use a predefined region"
+  @region B/bg-color :str "#c299ff60" => WAYSHOT_REGION_BG_COLOR "Region selection background color"
+  @region C/border-color :str "#fff0cfff" => WAYSHOT_REGION_BORDER_COLOR "Region selection border color"
+EOF
+  barg::unload
+
+  [ ! -d "${WAYSHOT_FOLDER}" ] && mkdir -p "${WAYSHOT_FOLDER}"
+  read -r SAVE_PATH < <(date +"${WAYSHOT_FILENAME_FORMAT}")
+
+  local SAVE_PATH="${WAYSHOT_FOLDER}/${SAVE_PATH}"
+
+  set -- "${SAVE_PATH}" -t "${WAYSHOT_FILETYPE}"
+  if ${WAYSHOT_ENABLE_CURSOR}; then
+    set -- "${@}" -c
+  fi
+
+  case "${BARG_SUBCOMMAND}" in
+    screen) wayshot::shot_screen "${@}" ;;
+    region) wayshot::shot_region "${@}" ;;
+    window) wayshot::shot_window "${@}" ;;
+  esac
+}
+
+main "${@}"

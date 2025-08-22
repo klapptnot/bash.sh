@@ -1,0 +1,167 @@
+#!/usr/bin/bash
+# 🔗 https://github.com/Klapptnot/bash.sh
+
+include barg.sh
+
+function wfrecord::exit_msg {
+  printf '\x1b[38;5;1m[ ERR ]\x1b[00m %b\n' "${*}" >&2
+  exit 1
+}
+
+function wfrecord::indicate_recording {
+  slurp -b#ff464660 &
+  local pid=${!}
+  sleep 0.2
+  kill -9 ${pid}
+}
+
+function wfrecord::find_source {
+  if [ "${1}" != '@' ]; then
+    printf '%s\n' "${1}"
+    return
+  fi
+
+  {
+    read -r node_name
+    read -r name
+  } < <(pactl -f json list sources \
+    | jq -rM 'first(.[] | select(.state == "RUNNING")) | .name + "\n" + .properties.["device.description"]')
+
+  [ -z "${node_name}" ] && return
+
+  printf '\x1b[38;5;2m[ OK  ]\x1b[00m Active source found: %s\n' "${name}" >&2
+  printf '%s\n' "${node_name}"
+}
+
+function wfrecord::start_recording {
+  sleep 0.1
+  local output_file="${1}"
+  shift
+
+  local cmd=(wf-recorder)
+
+  if [ -n "${WFRECORD_CODEC}" ]; then
+    cmd+=(-c "${WFRECORD_CODEC}")
+  fi
+
+  if [ -n "${WFRECORD_ENABLE_AUDIO}" ]; then
+    read -r source < <(wfrecord::find_source "${WFRECORD_ENABLE_AUDIO}")
+    [ -z "${source}" ] && wfrecord::exit_msg 'No active audio source found, specify manually'
+    cmd+=(--audio="${source}")
+  fi
+
+  cmd+=(-r "${WFRECORD_FRAMERATE}")
+
+  if [ -n "${WFRECORD_QUALITY}" ]; then
+    cmd+=(-q "${WFRECORD_QUALITY}")
+  fi
+
+  cmd+=("${@}")
+  cmd+=(-f "${output_file}")
+
+  printf '\x1b[38;5;2m[ REC ]\x1b[00m Starting recording: %s\n' "${output_file##*/}" >&2
+  printf '\x1b[38;5;3m[ TIP ]\x1b[00m Press Ctrl+C to stop recording\n' >&2
+
+  "${cmd[@]}" &> /dev/null || {
+    wfrecord::exit_msg 'Unable to start video recording'
+  }
+
+  printf '\x1b[1G\x1b[38;5;2m[ OK  ]\x1b[00m Recording saved: %s\n' "${output_file}" >&2
+}
+
+function wfrecord::record_screen {
+  wfrecord::indicate_recording &
+  wfrecord::start_recording "${1}.${WFRECORD_CONTAINER}" "${@:2}"
+}
+
+function wfrecord::record_region {
+  read -r POS_N_SIZE < <(
+    slurp -d -b"${WFRECORD_REGION_BG_COLOR}" -c"${WFRECORD_REGION_BORDER_COLOR}" 2> /dev/null
+  )
+  [ -z "${POS_N_SIZE}" ] && wfrecord::exit_msg 'Nothing selected, abort'
+  printf '\x1b[38;5;2m[ OK  ]\x1b[00m Region selected: %s\n' "${POS_N_SIZE}" >&2
+
+  wfrecord::indicate_recording &
+  wfrecord::start_recording "${1}.${WFRECORD_CONTAINER}" -g "${POS_N_SIZE}" "${@:2}"
+}
+
+function wfrecord::record_window {
+  {
+    read -r POS_N_SIZE
+    read -r WCLASS
+  } < <(
+    hyprctl activewindow -j \
+      | jq -rM '(.at[0]|tostring) + "," + (.at[1]|tostring) + " " + (.size[0]|tostring) + "x" + (.size[1]|tostring) + "\n" + .class'
+  )
+
+  [ "${POS_N_SIZE}" == 'null,null nullxnull' ] && wfrecord::exit_msg 'No window found, abort'
+  wfrecord::indicate_recording &
+  wfrecord::start_recording "${1}_${WCLASS}.${WFRECORD_CONTAINER}" -g "${POS_N_SIZE}" "${@:2}"
+}
+
+function main {
+  read -r USER_VIDS_DIR < <(xdg-user-dir VIDEOS)
+
+  for cmd in wf-recorder slurp hyprctl xdg-user-dir; do
+    read -r COMMAND < <(type -p "${cmd}")
+    if [ -z "${COMMAND}" ]; then
+      wfrecord::exit_msg 'Command "%s" not found in PATH\n' "${cmd}"
+    fi
+  done
+  unset COMMAND
+
+  local _epilog_lines=(
+    '{acc}Examples:\x1b[0m'
+    '  wfrecord'
+    '  wfrecord region --audio -r 60'
+    '  wfrecord window -c libx265 -t mkv'
+    "  wfrecord screen -f ~/Desktop -n 'demo_%H%M%S'"
+    "  wfrecord region -B '#00ff0040' -c av1 -q 50"
+  )
+  barg::parse "${@}" << EOF
+  #[always]
+  meta {
+    summary: 'Wayland video recording utility'
+    prognam: 'wfrecord'
+    extargs: 'WFRECORD_EXTRAS'
+    epilogs: '_epilog_lines'
+    helpmsg: true
+    showdef: true
+    reqcmds: true
+  }
+
+  commands {
+    screen: "Record entire screen"
+    region: "Record selected region"
+    window: "Record selected window"
+  }
+
+  a/audio :str => WFRECORD_ENABLE_AUDIO "Include audio from that source, @ to detect source"
+  r/framerate :int 30 => WFRECORD_FRAMERATE "Recording framerate"
+  c/codec ["libx264" "libx265" "av1"] => WFRECORD_CODEC "Video codec: libx264, libx265, av1"
+  q/quality :str => WFRECORD_QUALITY "Video quality/bitrate"
+  t/container ["mp4" "mkv" "webm"] => WFRECORD_CONTAINER "Container format: mp4, mkv, webm"
+  f/folder :str "${USER_VIDS_DIR}/Recordings" => WFRECORD_FOLDER "Output folder"
+  n/filename :str "recording_%Y-%m-%d-%H-%M-%S" => WFRECORD_FILENAME_FORMAT "Filename format"
+
+  B/bg-color :str "#ff464660" => WFRECORD_REGION_BG_COLOR "Region selection background color"
+  C/border-color :str "#ff6b6bff" => WFRECORD_REGION_BORDER_COLOR "Region selection border color"
+EOF
+  barg::unload
+
+  [ ! -d "${WFRECORD_FOLDER}" ] && mkdir -p "${WFRECORD_FOLDER}"
+  read -r SAVE_PATH < <(date +"${WFRECORD_FILENAME_FORMAT}")
+
+  local SAVE_PATH="${WFRECORD_FOLDER}/${SAVE_PATH}"
+
+  case "${BARG_SUBCOMMAND}" in
+    screen) wfrecord::record_screen "${SAVE_PATH}" ;;
+    region) wfrecord::record_region "${SAVE_PATH}" ;;
+    window) wfrecord::record_window "${SAVE_PATH}" ;;
+    *)
+      wfrecord::exit_msg "Missing valid subcommand: screen, region, or window"
+      ;;
+  esac
+}
+
+main "${@}"
