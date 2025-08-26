@@ -9,7 +9,7 @@ function wfrecord::exit_msg {
 }
 
 function wfrecord::indicate_recording {
-  slurp -b#ff464660 &
+  slurp "-b${1:-#ff464660}" &
   local pid=${!}
   sleep 0.2
   kill -9 ${pid}
@@ -62,7 +62,12 @@ function wfrecord::start_recording {
   printf '\x1b[38;5;2m[ REC ]\x1b[00m Starting recording: %s\n' "${output_file##*/}" >&2
   printf '\x1b[38;5;3m[ TIP ]\x1b[00m Press Ctrl+C to stop recording\n' >&2
 
-  "${cmd[@]}" &> /dev/null || {
+  "${cmd[@]}" &> /dev/null &
+  local pid="${!}"
+  trap "kill -s SIGINT ${pid}" SIGINT
+  wait -fn "${pid}"
+
+  [ -f "${output_file}" ] || {
     wfrecord::exit_msg 'Unable to start video recording'
   }
 
@@ -70,6 +75,13 @@ function wfrecord::start_recording {
 }
 
 function wfrecord::record_screen {
+  ${WFRECORD_SCREEN_START_STOP} && {
+    pkill --signal SIGINT wf-recorder && {
+      printf '\x1b[38;5;2m[ OK  ]\x1b[00m Session stopped\n' >&2
+      wfrecord::indicate_recording '#4646ff60'
+      return 1
+    }
+  }
   wfrecord::indicate_recording &
   wfrecord::start_recording "${1}.${WFRECORD_CONTAINER}" "${@:2}"
 }
@@ -144,8 +156,9 @@ function main {
   f/folder :str "${USER_VIDS_DIR}/Recordings" => WFRECORD_FOLDER "Output folder"
   n/filename :str "recording_%Y-%m-%d-%H-%M-%S" => WFRECORD_FILENAME_FORMAT "Filename format"
 
-  B/bg-color :str "#ff464660" => WFRECORD_REGION_BG_COLOR "Region selection background color"
-  C/border-color :str "#ff6b6bff" => WFRECORD_REGION_BORDER_COLOR "Region selection border color"
+  @region B/bg-color :str "#ff464660" => WFRECORD_REGION_BG_COLOR "Region selection background color"
+  @region C/border-color :str "#ff6b6bff" => WFRECORD_REGION_BORDER_COLOR "Region selection border color"
+  @screen s/start-stop :flag => WFRECORD_SCREEN_START_STOP "Try to start recording, or stop current session"
 EOF
   barg::unload
 
