@@ -10,17 +10,21 @@ readonly LOCAL_LIB="${HOME}/.local/lib/bash.sh"
 function main {
   cd "${SCRIPT_DIR}"
 
-  if [[ ! -x "${SCRIPT_DIR}/bin/bstow" ]]; then
-    echo "Error: bstow not found in ${SCRIPT_DIR}/bin/" >&2
-    exit 1
-  fi
-
   echo "Installing bash tools using bstow..."
 
   mkdir -p "${LOCAL_BIN}" "${LOCAL_LIB}"
 
   echo "Downloading barg.sh to ${SCRIPT_DIR}/lib/..."
   curl -fsSL https://raw.githubusercontent.com/klapptnot/barg.sh/main/barg.sh -o "${SCRIPT_DIR}/lib/barg.sh"
+  echo "Downloading bstow to ${SCRIPT_DIR}/bin/..."
+  curl -fsSL https://raw.githubusercontent.com/klapptnot/bstow/main/bstow -o "${SCRIPT_DIR}/bin/bstow"
+
+  chmod 755 "${SCRIPT_DIR}/bin/bstow"
+
+  if [[ ! -x "${SCRIPT_DIR}/bin/bstow" ]]; then
+    echo "Error: bstow not found in ${SCRIPT_DIR}/bin/" >&2
+    exit 1
+  fi
 
   echo "Linking bin/ to ${LOCAL_BIN}..."
   "${SCRIPT_DIR}/bin/bstow" -Sv -t "${LOCAL_BIN}" -d "${SCRIPT_DIR}/bin"
