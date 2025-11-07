@@ -68,7 +68,8 @@ function rsum {
 
   [[ ${times} =~ ^[0-9]+$ ]] && {
     local esep="${sep@Q}"
-    [ "${esep:0:1}" == '$' ] && esep="${esep:2:-1}" # remove sorrounding $'...'
+    [ "${esep:0:1}" == '$' ] && esep="${esep:2:-1}"
+    esep="${esep:1:-1}"
     tr -dc "${charset}" < /dev/urandom 2> >(sed 's/^tr:/rsum:/' >&2) | head -c "$((length * times))" | sed "s/\s//g;s/\(.\{1,${length}\}\)/\1${esep}/g;s/${esep}$//"
     ${break_line} && echo '' 2> /dev/null
     return
