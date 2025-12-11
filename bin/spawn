@@ -49,9 +49,11 @@ function spawner {
   sleep "${1:?}" || return
   shift 1
 
+  read -r USER_ID < <(id -u)
+
   if ${SPAWN_RESTART}; then
-    if pgrep "${SPAWN_EXEC_LINE[0]}" &> /dev/null; then
-      pkill --signal SIGKILL "${SPAWN_EXEC_LINE[0]}"
+    if pgrep -U "${USER_ID}" "${SPAWN_EXEC_LINE[0]}" &> /dev/null; then
+      pkill -U "${USER_ID}" --signal SIGKILL "${SPAWN_EXEC_LINE[0]}"
     fi
   fi
 

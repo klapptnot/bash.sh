@@ -1,7 +1,8 @@
 #!/usr/bin/bash
 # 🔗 https://github.com/Klapptnot/bash.sh
 
-bashlb logger.sh
+LOGGER_LEVEL="${LOGGER_LEVEL:-4}"
+include logger.sh
 
 # Sleep time in seconds
 readonly SLEEP_TIME="${SLEEP_TIME:-5}"
@@ -16,6 +17,7 @@ readonly ARGS_TO_LAUNCH=(
   '--remote-allow-origins=http://localhost:9222'
   '--silent-launch'
   '--no-startup-window'
+  "--user-data-dir=${HOME}/.config/lpwa-google-chrome"
 )
 # Array of CLI apps to check if they are installed
 readonly CLI_APPS=(
@@ -53,9 +55,12 @@ function main {
     exit 1
   fi
 
+  read -r USER_ID < <(id -u)
+  mkdir -p ~/.config/lpwa-google-chrome || return 1
+
   # Check if an instance of the browser is running, which may not have the args needed
-  if pgrep -fa -- "${BROWSER_VANITY}" &> /dev/null; then
-    if ! pgrep -fa -- "${BROWSER_VANITY}" | grep -q -- "${ARGS_TO_LAUNCH[0]}" || ! pgrep -fa -- "${BROWSER_VANITY}" | grep -q -- "${ARGS_TO_LAUNCH[1]}"; then
+  if pgrep -U "${USER_ID}" -fa -- "${BROWSER_VANITY}" &> /dev/null; then
+    if ! pgrep -U "${USER_ID}" -fa -- "${BROWSER_VANITY}" | grep -q -- "${ARGS_TO_LAUNCH[0]}" || ! pgrep -U "${USER_ID}" -fa -- "${BROWSER_VANITY}" | grep -q -- "${ARGS_TO_LAUNCH[1]}"; then
       log error 'Browser is running, but without the args needed... Maybe restart it'
       exit 1
     fi
@@ -67,7 +72,7 @@ function main {
   fi
 
   # Check if the browser is running, with the args needed
-  if ! pgrep -f -- "${BROWSER_VANITY}" &> /dev/null; then
+  if ! pgrep -U "${USER_ID}" -f -- "${BROWSER_VANITY}" &> /dev/null; then
     log error 'Browser could not be started in time: %s' "${BROWSER_VANITY}"
     exit 1
   fi
