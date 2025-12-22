@@ -5,6 +5,7 @@ include logger.sh
 include str_escape.sh
 include xml_unescape.sh
 include url_params.sh
+include load_conf.sh
 include barg.sh
 
 # shellcheck disable=SC2034
@@ -52,6 +53,22 @@ BARG
     done
     return 1
   fi
+
+  declare -A EXA_CONFIG
+  load_conf EXA_CONFIG ~/.config/_/exa.conf && {
+    [[ -z "${BARG_ARGV_TABLE[EXA_TIMEOUT]}" && -n "${EXA_CONFIG[timeout]}" ]] \
+      && EXA_TIMEOUT="${EXA_CONFIG[timeout]}"
+    [[ -z "${BARG_ARGV_TABLE[EXA_TRIES]}" && -n "${EXA_CONFIG[tries]}" ]] \
+      && EXA_TRIES="${EXA_CONFIG[tries]}"
+    [[ -z "${BARG_ARGV_TABLE[EXA_COOKIES]}" && -n "${EXA_CONFIG[cookies]}" ]] \
+      && EXA_COOKIES="${EXA_CONFIG[cookies]}"
+    [[ -z "${BARG_ARGV_TABLE[EXA_USER_AGENT]}" && -n "${EXA_CONFIG[user_agent]}" ]] \
+      && EXA_USER_AGENT="${EXA_CONFIG[user_agent]}"
+    [[ -z "${BARG_ARGV_TABLE[EXA_RESULT_AMOUNT]}" && -n "${EXA_CONFIG[amount]}" ]] \
+      && EXA_RESULT_AMOUNT="${EXA_CONFIG[amount]}"
+    [[ -z "${BARG_ARGV_TABLE[EXA_RESULT_START]}" && -n "${EXA_CONFIG[skip]}" ]] \
+      && EXA_RESULT_START="${EXA_CONFIG[skip]}"
+  }
 
   # shellcheck disable=SC2153
   local query="${EXA_QUERY[*]}"
@@ -187,24 +204,36 @@ function google_search {
 
     response_body=$(
       curl -Ss "${google_req_url}" --compressed \
-        -H "user-agent: ${request[user_agent]}" \
         -H 'accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' \
         -H 'accept-language: en-US,en;q=0.5' \
         -H 'accept-encoding: gzip, deflate' \
-        -H 'referer: https://www.google.com/' \
-        -H 'sec-ch-prefers-color-scheme: dark' \
-        -H 'sec-ch-ua-platform: "Linux"' \
+        -H 'cache-control: max-age=0' \
+        -b "${request[cookies]}" \
         -H 'dnt: 1' \
-        -H 'sec-gpc: 1' \
+        -H 'downlink: 8.85' \
+        -H 'priority: u=0, i' \
+        -H 'referer: https://www.google.com/' \
+        -H 'rtt: 100' \
+        -H 'sec-ch-prefers-color-scheme: dark' \
+        -H 'sec-ch-ua-arch: "x86"' \
+        -H 'sec-ch-ua-bitness: "64"' \
+        -H 'sec-ch-ua-form-factors: "Desktop"' \
+        -H 'sec-ch-ua-mobile: ?0' \
+        -H 'sec-ch-ua-model: ""' \
+        -H 'sec-ch-ua-platform: "Linux"' \
+        -H "user-agent: ${request[user_agent]}" \
+        -H 'dnt: 1' \
         -H 'connection: disconnect' \
-        -H "cookie: ${request[cookies]}" \
         -H 'upgrade-insecure-requests: 1' \
+        -H 'sec-ch-ua-platform-version: ""' \
+        -H 'sec-ch-ua-wow64: ?0' \
         -H 'sec-fetch-dest: document' \
         -H 'sec-fetch-mode: navigate' \
-        -H 'sec-fetch-site: none' \
-        -H 'sec-fetch-user: ?1' \
-        -H 'priority: u=0, i' \
         -H 'sec-fetch-site: same-origin' \
+        -H 'sec-fetch-user: ?1' \
+        -H 'x-browser-channel: stable' \
+        -H 'x-browser-copyright: Copyright 2025 Google LLC. All Rights reserved.' \
+        -H 'x-browser-validation: lWZoCd/Ihv9Aa32HuKZ6rlDBoto=' \
         -H 'x-browser-year: 2025' \
         --max-time "${request[timeout]:-5}" \
         --write-out '\n%{http_code}' \
@@ -242,7 +271,9 @@ function google_search {
   log d 'Record of HTTP codes [%s]' "${http_codes[*]}"
   ${in_error} && return 1
 
-  mapfile -t GOOGLE_RESULT_TITLES < <(grep -oP '(?<=<br><h3 class="LC20lb MBeuO DKV0Md">)[^<]*(?=<)' <<< "${response_body}" | xml_unescape)
+  echo "${response_body}" > some.html
+
+  mapfile -t GOOGLE_RESULT_TITLES < <(grep -oP '(?<=<br><h3 class="LC20lb MBeuO DKV0Md" id=")[^<]*(?=<)' <<< "${response_body}" | sed 's/^.\{29\}//' | xml_unescape)
   mapfile -t GOOGLE_RESULT_LINKS < <(grep -oP '(?<=><a jsname="UWckNb" href=")[^ ]*(?=")' <<< "${response_body}")
 
   declare -g GOOGLE_RESULTS=${#GOOGLE_RESULT_LINKS[@]}

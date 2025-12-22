@@ -16,6 +16,10 @@ function spinner.init {
   return 0
 }
 
+function spinner.print {
+  printf '\x1b[0G\x1b[0J'"${1}\n" "${@:2}"
+}
+
 # Start spinner in background - requires init first
 function spinner.start {
   [[ -z "${___SPINNER_PIPE}" ]] && {
@@ -63,10 +67,9 @@ function spinner.update {
   if [[ -n "${___SPINNER_PIPE}" && -f "${___SPINNER_PIPE}" ]]; then
     echo "${new_text}" > "${___SPINNER_PIPE}"
     return 0
-  else
-    echo "Error: Spinner not initialized or file not available" >&2
-    return 1
   fi
+
+  return 1
 }
 
 # Stop spinner (pause) - kills process but keeps resources
@@ -87,10 +90,10 @@ function spinner.drop {
   if [[ -n "${___SPINNER_PID}" ]]; then
     kill "${___SPINNER_PID}" &> /dev/null
     wait "${___SPINNER_PID}" 2> /dev/null
-  fi
 
-  # Clean up display
-  printf '\x1b[?25h\x1b[0G\x1b[0J'
+    # Clean up display
+    printf '\x1b[?25h\x1b[0G\x1b[0J'
+  fi
 
   # Remove FIFO
   [[ -n "${___SPINNER_PIPE}" && -f "${___SPINNER_PIPE}" ]] && rm -f "${___SPINNER_PIPE}"
@@ -107,4 +110,3 @@ function spinner.drop {
 function spinner.is_running {
   [[ -n "${___SPINNER_PID}" ]] && kill -0 "${___SPINNER_PID}" 2> /dev/null
 }
-
