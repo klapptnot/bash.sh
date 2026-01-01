@@ -1,17 +1,9 @@
 #!/usr/bin/bash
-# 🔗 https://github.com/Klapptnot/bash.sh
-
-function main {
-  if [[ "${1}" =~ ^-f|--full|full$ ]]; then
-    colormap
-    exit
-  fi
-  print_palette_16
-}
+# 🔗 https://github.com/klapptnot/bash.sh
 
 function print_palette_16 {
   # Define array of ANSI color names
-  color_names=(
+  local color_names=(
     "Black"        # 00:
     "Red"          # 01:
     "Green"        # 02:
@@ -38,10 +30,17 @@ function print_palette_16 {
 
 function colormap {
   for c in {0..255}; do
-    local d=$(((c + 3) % 6))
     printf "\x1b[48;5;%dm   \x1b[00m\x1b[49m\x1b[38;5;%dm%03d \x1b[00m" "${c}" "${c}" "${c}"
-    [ "${d}" -eq "0" ] && printf '\n'
+    ((((c + 3) % 6) == 0)) && printf '\n'
   done
+}
+
+function main {
+  if [[ "${1}" =~ ^-f|--full|full$ ]]; then
+    colormap
+    exit
+  fi
+  print_palette_16
 }
 
 main "${@}"

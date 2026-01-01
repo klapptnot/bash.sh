@@ -1,0 +1,136 @@
+#!/usr/bin/bash
+
+include str_strip.sh
+
+# Initialize the SQLite database
+function initialize_db {
+  sqlite3 "${DB_PATH}" << EOF
+CREATE TABLE IF NOT EXISTS music (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  artist TEXT NOT NULL,
+  album TEXT NOT NULL,
+  lyrics TEXT
+);
+EOF
+}
+
+function create_query {
+  local limit="${1:-1}"
+  shift 1
+  local query="SELECT name, artist, album, lyrics,"
+
+  # Add relevance scoring for each word in the arguments
+  for word in "${@}"; do
+    word="${word//\'/\'\'}"
+    query="${query}
+  CASE WHEN name LIKE '${word}' THEN 1 ELSE 0 END +
+  CASE WHEN name LIKE '%${word}%' THEN 1 ELSE 0 END +
+  CASE WHEN artist LIKE '%${word}%' THEN 1 ELSE 0 END +"
+  done
+
+  query="${query%+}
+  AS relevance
+FROM music
+WHERE"
+
+  for word in "${@}"; do
+    word="${word//\'/\'\'}"
+    query="${query} name LIKE '%${word}%' OR artist LIKE '%${word}%' OR"
+  done
+
+  query="${query%OR}
+ORDER BY relevance DESC, name ASC
+LIMIT ${limit};"
+
+  printf '%s' "${query}"
+}
+
+# Search for a query in the database
+function search_db {
+  {
+    printf 'NAME\tARTIST\tALBUM\n----\t------\t-----\n'
+    create_query 15 "${@}" | sqlite3 "${DB_PATH}" -json | jq -Mr '.[] |
+    .name = if .name | length > 36 then .name | (.[0:35] + "...") else .name end |
+    .album = if .album | length > 36 then .album | (.[0:35] + "...") else .album end |
+    .name + "\t" + .artist + "\t" + .album'
+  } | column -t -s $'\t'
+}
+
+# Refresh the database with music files from a folder
+function refresh_db {
+  local recreate="${1}"
+  local folder="${2}"
+  local ffinfo=""
+
+  # Check if the folder contains music files
+  if ! ls "${folder}"/*.mp3 1> /dev/null 2>&1; then
+    echo "No music files found in the specified folder."
+    return 1
+  fi
+
+  if ${recreate}; then
+    rm -f "${DB_PATH}"
+    initialize_db
+    function sql_opr_gen {
+      printf "INSERT INTO music (name, artist, album, lyrics) VALUES ('${1}', '${2}', '${3}', '${4}');"
+    }
+  else
+    function sql_opr_gen {
+      printf 'UPDATE music\n%s\n%s' \
+        "SET album = '${3}', lyrics = '${4}'" \
+        "WHERE name = '${1}', artist = '${2}';"
+    }
+  fi
+
+  # Extract metadata and insert into the database
+  for file in "${folder}"/*.mp3; do
+    ffinfo=$(ffmpeg -i "${file}" 2> /dev/null)
+
+    # assume it will never have a linefeed
+    read -r name < <(grep -oP "(?<=title: ).*$" <<< "${ffinfo}" | str_strip)
+    read -r artist < <(grep -oP "(?<=artist: ).*$" <<< "${ffinfo}" | str_strip)
+    read -r album < <(grep -oP "(?<=album: ).*$" <<< "${ffinfo}" | str_strip)
+    # lyrics tag can have different names, grep it
+    lyrics=$(
+      ffprobe -loglevel error \
+        -show_entries format_tags="$(grep --max-count=1 "lyrics" <<< "${ffinfo}" | cut -d ':' -f 1)" \
+        -of default=noprint_wrappers=1:nokey=1 "${file}"
+    )
+    printf 'Found %s of %s\n' "${name}" "${artist}"
+
+    sql_opr_gen "${name//\'/\'\'}" "${artist//\'/\'\'}" "${album//\'/\'\'}" "${lyrics//\'/\'\'}" | sqlite3 "${DB_PATH}"
+  done
+}
+
+function main {
+  DB_PATH="${HOME}/.config/mqr.db"
+
+  # Initialize the database if not exists
+  [ -f "${DB_PATH}" ] || initialize_db
+
+  local command="${1}"
+  shift
+
+  case "${command}" in
+    search)
+      search_db "${@}"
+      ;;
+    query)
+      create_query 1 "${@}" | sqlite3 "${DB_PATH}" -json \
+        | jq -Mr '.[0]? | "Song   : " + .name + "\nArtist" + .artist + "\nLyrics\n\n" + .lyrics'
+      ;;
+    recreate)
+      refresh_db true "${@}"
+      ;;
+    refresh)
+      refresh_db false "${@}"
+      ;;
+    *)
+      echo "Usage: ${0##*/} {search|query|refresh|recreate} <args>"
+      exit 1
+      ;;
+  esac
+}
+
+main "${@}"

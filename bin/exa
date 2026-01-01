@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# 🔗 https://github.com/Klapptnot/bash.sh
+# 🔗 https://github.com/klapptnot/bash.sh
 
 include logger.sh
 include str_escape.sh
@@ -270,8 +270,6 @@ function google_search {
 
   log d 'Record of HTTP codes [%s]' "${http_codes[*]}"
   ${in_error} && return 1
-
-  echo "${response_body}" > some.html
 
   mapfile -t GOOGLE_RESULT_TITLES < <(grep -oP '(?<=<br><h3 class="LC20lb MBeuO DKV0Md" id=")[^<]*(?=<)' <<< "${response_body}" | sed 's/^.\{29\}//' | xml_unescape)
   mapfile -t GOOGLE_RESULT_LINKS < <(grep -oP '(?<=><a jsname="UWckNb" href=")[^ ]*(?=")' <<< "${response_body}")

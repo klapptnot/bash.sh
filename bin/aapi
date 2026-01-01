@@ -1,0 +1,98 @@
+#!/usr/bin/bash
+# termux only
+# shellcheck disable=SC2086,SC2068
+
+include nucompletion-adapter.sh
+
+function help {
+  printf 'API - A way to use Termux:API APIs, since expansion was needed.\n\n'
+  printf ' Usage:\n'
+  printf '   aapi [OPTIONS]\n'
+  printf '       -h/--help    - Show this message\n'
+  printf '       -l/--list    - List all api functions\n'
+  printf '   aapi [FUNCTION] [OPTIONS]\n'
+  printf '       [FUNCTION]   - See list with -l/--list\n'
+  printf '       [OPTIONS]    - See options with [FUNCTION] -h/--help\n\n'
+  printf 'Any other string will be treated as a function name\n'
+}
+
+function nucomp_get {
+  local pref="${1%\ *}"
+  mapfile -t apis < <(ls /data/data/com.termux/files/usr/bin/termux-"${pref}"* 2> /dev/null)
+  mapfile -t extras < <(ls /data/data/com.termux/files/home/.termux/bin/"${pref}"* 2> /dev/null)
+
+  if ((${#apis[@]} + ${#extras[@]} == 0)); then
+    printf '[]'
+    return
+  fi
+
+  printf '%s\n' "${extras[@]}" "${apis[@]}" \
+    | sed 's#^/data/data/com.termux/files/usr/bin/termux-\(.*\)$#\1\t\0#g;'"s#^/data/data/com.termux/files/home/.termux/bin/\(.*\)\$#\1\tshell script at ~/.termux/bin#" \
+    | nucompletion-adapter
+}
+
+function list_apis {
+  local i=1
+  local h
+  local ROW COL
+  read -r ROW COL < <(stty size)
+  local COLS=$((COL / 40))
+
+  for a in /data/data/com.termux/files/usr/bin/termux-*; do
+    h=$((i % COLS))
+    local b="${a//*termux-/}"
+
+    if [[ ${h} -eq 0 ]]; then
+      printf "%s\n" "${b}"
+    else
+      printf "%s%*s" "${b}" "$((40 - ${#b}))" ""
+    fi
+
+    ((i++))
+  done
+  echo
+}
+
+case ${1} in
+  -h | --help)
+    help
+    exit 0
+    ;;
+  -l | --list)
+    list_apis
+    exit 0
+    ;;
+  -nucomp)
+    nucomp_get "${@:3}"
+    exit 0
+    ;;
+  --expand)
+    shift 1
+    # Handle --expand flag, if static strings have ${vars} to expand
+    local -a arr=("${1}")
+    shift 1
+
+    for arg in "${@}"; do
+      arr+=("$(eval "echo -n \"${arg//\"/\\\"}\"")")
+    done
+    set -- "${arr[@]}"
+    ;;
+esac
+
+# Validate and execute termux command
+if [[ ${#} -eq 0 ]]; then
+  printf '%b\n' "\033[38;05;160m[ERROR] No function was specified.\033[00m\n See help: api --help"
+  exit 1
+fi
+
+path_to_script=""
+if [[ -f "/data/data/com.termux/files/usr/bin/termux-${1}" ]]; then
+  path_to_script="/data/data/com.termux/files/usr/bin/termux-${1}"
+elif [[ -f "/data/data/com.termux/files/home/.termux/bin/${1}" ]]; then
+  path_to_script="/data/data/com.termux/files/home/.termux/bin/${1}"
+else
+  printf '%b\n' "\033[38;05;160m[ERROR] '${1}' not found.\033[00m"
+  exit 1
+fi
+
+exec -- bash "${path_to_script}" "${@:2}"

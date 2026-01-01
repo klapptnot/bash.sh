@@ -1,0 +1,66 @@
+#!/usr/bin/bash
+# termux only
+
+BINEXEC="/data/data/com.termux/files/usr/libexec/termux-api"
+
+function usage {
+  cat << EOF
+Usage:
+  clip get         -> get system clipboard
+  clip set [text]  -> set system clipboard
+  clip cls         -> clear system clipboard
+  clip push        -> push from system to termux
+  clip pull        -> pull from termux to system
+
+Notes:
+  If no text is given to 'set', reads from stdin.
+EOF
+  exit
+}
+
+function get_stdin {
+  sed "s/\x1b\(\[[0-9;]*[a-zA-Z]\)/\\x1b\1/g"
+}
+
+function main {
+  local cmd="${1}"
+  shift 1
+
+  case "${cmd}" in
+    get)
+      "${BINEXEC}" Clipboard
+      ;;
+
+    set)
+      if [ "${#}" == "0" ]; then
+        get_stdin | exec "${BINEXEC}" Clipboard -e api_version 2 --ez set true
+      else
+        exec "${BINEXEC}" Clipboard -e api_version 2 --ez set true <<< "${*}" &
+      fi
+      ;;
+
+    cls)
+      exec "${BINEXEC}" Clipboard -e api_version 2 --ez set true &
+      ;;
+
+    push)
+      # system → termux
+      exec "${BINEXEC}" Clipboard | termux-clipboard-set
+      ;;
+
+    pull)
+      # termux → system
+      termux-clipboard-get | exec "${BINEXEC}" Clipboard -e api_version 2 --ez set true
+      ;;
+
+    -h | --help | help | "")
+      usage
+      ;;
+
+    *)
+      printf '[ERR] Unknown command `%s`\n' "${cmd}" >&2
+      ;;
+  esac
+}
+
+main "${@}"

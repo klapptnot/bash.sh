@@ -1,0 +1,249 @@
+#!/usr/bin/bash
+# termux only
+# Pure-FTPd Server Wrapper for Termux
+# Configured for virtual users with full permissions
+
+LOGGER_LEVEL="${LOGGER_LEVEL:-4}"
+include load_conf.sh
+include logger.sh
+
+function help_msg {
+  cat << EOF
+Pure-FTPd Server Manager for Termux
+
+Config file: ~/.config/_/ftpd.conf
+Format (key: value):
+  db_path: User database path (default: ~/.pure-ftpd/pureftpd.pdb)
+  pid_file: PID file location (default: ~/.pure-ftpd/pure-ftpd.pid)
+  port: Server port (default: 8021)
+  passive_min: Min passive port (default: 50000)
+  passive_max: Max passive port (default: 50100)
+  max_clients: Maximum clients (default: 10)
+  max_per_ip: Maximum per IP (default: 5)
+  local_ip: Server IP for display (auto-detected if empty)
+
+Usage:
+  ftpc [OPTIONS]
+    start       - Start the FTP server (default)
+    stop/kill   - Stop the FTP server
+    restart     - Restart the FTP server
+    status      - Show server status
+    --help/-h   - Show this message
+
+Create users with:
+  pure-pw useradd <username> -u \$(id -u) -d <directory> -m
+
+Example:
+  pure-pw useradd Shared -u \$(id -u) -d ~/storage/shared -m
+
+Example config (~/.config/_/ftpd.conf):
+  port: 2121
+  passive_min: 60000
+  passive_max: 60100
+  max_clients: 20
+EOF
+}
+
+function check_database {
+  local db_path="${1}"
+
+  if [[ ! -f "${db_path}" ]]; then
+    log error "User database not found: ${db_path}"
+    printf '%s\n' "Create users with:"
+    printf '%s\n' "  pure-pw useradd <username> -u \$(id -u) -d <directory> -m"
+    printf '\n'
+    printf '%s\n' "Example:"
+    printf '%s\n' "  pure-pw useradd Shared -u \$(id -u) -d ~/storage/shared -m"
+    exit 1
+  fi
+
+  log debug "Database found: ${db_path}"
+}
+
+function stop_server {
+  local pid_file="${1}"
+
+  if [[ ! -f "${pid_file}" ]]; then
+    log warn "No PID file found, attempting pkill"
+    pkill -9 pure-ftpd 2> /dev/null && log info "Server stopped via pkill" || log warn "No process found"
+    return 0
+  fi
+
+  local old_pid
+  read -r old_pid < "${pid_file}" 2> /dev/null || true
+
+  if [[ -n "${old_pid}" ]] && kill -0 "${old_pid}" 2> /dev/null; then
+    log info "Stopping FTP server (PID: ${old_pid})"
+    kill "${old_pid}"
+    sleep 1
+
+    if kill -0 "${old_pid}" 2> /dev/null; then
+      log warn "Process still running, force killing"
+      kill -9 "${old_pid}" 2> /dev/null || true
+    fi
+
+    rm -f "${pid_file}"
+    log info "Server stopped successfully"
+  else
+    log warn "Stale PID file found, cleaning up"
+    rm -f "${pid_file}"
+    pkill -9 pure-ftpd 2> /dev/null || true
+  fi
+}
+
+function show_status {
+  local pid_file="${1}"
+
+  if [[ ! -f "${pid_file}" ]]; then
+    printf '%s\n' "FTP server: not running (no PID file)"
+    return 1
+  fi
+
+  local pid
+  read -r pid < "${pid_file}"
+
+  if kill -0 "${pid}" 2> /dev/null; then
+    printf '%s\n' "FTP server: running (PID: ${pid})"
+    return 0
+  else
+    printf '%s\n' "FTP server: stale PID file (process not running)"
+    return 2
+  fi
+}
+
+function get_local_ip {
+  local ip
+  read -r ip < <(hostname -I | awk '{print $1}')
+
+  if [[ -z "${ip}" ]]; then
+    printf '%s' "localhost"
+  else
+    printf '%s' "${ip}"
+  fi
+}
+
+function start_server {
+  local db_path="${1}"
+  local pid_file="${2}"
+  local port="${3}"
+  local passive_min="${4}"
+  local passive_max="${5}"
+  local max_clients="${6}"
+  local max_per_ip="${7}"
+  local local_ip="${8}"
+  set -- "${@:9}"
+
+  check_database "${db_path}"
+
+  local pid_dir="${pid_file%/*}"
+  [[ ! -d "${pid_dir}" ]] && mkdir -p "${pid_dir}"
+
+  log info "Starting Pure-FTPd server on port ${port}"
+  log debug "Passive ports: ${passive_min}-${passive_max}"
+  log debug "Max clients: ${max_clients}, Max per IP: ${max_per_ip}"
+
+  if ! pure-ftpd \
+    -S 0.0.0.0,"${port}" \
+    -l puredb:"${db_path}" \
+    -E \
+    -j \
+    -D \
+    -H \
+    -b \
+    -p "${passive_min}:${passive_max}" \
+    -c "${max_clients}" \
+    -C "${max_per_ip}" \
+    -U 022:022 \
+    -I 15 \
+    -g "${pid_file}" \
+    -B \
+    "${@}"; then
+    log error "Failed to start FTP server 😭"
+    exit 1
+  fi
+
+  log info "FTP server started successfully! ✨"
+  printf '\n'
+  printf '%s\n' "Server details:"
+  printf '%s\n' "  • Port: ${port}"
+  printf '%s\n' "  • Passive ports: ${passive_min}-${passive_max}"
+  printf '%s\n' "  • Max clients: ${max_clients}"
+  printf '%s\n' "  • Max per IP: ${max_per_ip}"
+  printf '\n'
+  printf '%s\n' "Connect with:"
+  printf '  curlftpfs -o user=<username>:<password> ftp://%s:%s /mnt/point\n' "${local_ip}" "${port}"
+  printf '\n'
+  printf '%s\n' "Stop with:"
+  printf '%s\n' "  ftpc stop"
+}
+
+function main {
+  declare -A ftpd_config
+  init_config ftpd_config ~/.config/_/ftpd.conf
+
+  local db_path="${ftpd_config[db_path]:-"${HOME}/.pure-ftpd/pureftpd.pdb"}"
+  local pid_file="${ftpd_config[pid_file]:-"${HOME}/.pure-ftpd/pure-ftpd.pid"}"
+  local port="${ftpd_config[port]:-8021}"
+  local passive_min="${ftpd_config[passive_min]:-50000}"
+  local passive_max="${ftpd_config[passive_max]:-50100}"
+  local max_clients="${ftpd_config[max_clients]:-10}"
+  local max_per_ip="${ftpd_config[max_per_ip]:-5}"
+  local local_ip="${ftpd_config[local_ip]:-}"
+  local action="start"
+
+  if [[ -z "${local_ip}" ]]; then
+    read -r local_ip < <(get_local_ip)
+  fi
+
+  while [[ ${#} -gt 0 ]]; do
+    case "${1}" in
+      start)
+        action="start"
+        shift
+        ;;
+      stop | kill)
+        action="stop"
+        shift
+        ;;
+      restart)
+        action="restart"
+        shift
+        ;;
+      status)
+        action="status"
+        shift
+        ;;
+      --help | -h)
+        help_msg
+        exit 0
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  log debug "Action: ${action}"
+
+  case "${action}" in
+    start)
+      stop_server "${pid_file}"
+      start_server "${db_path}" "${pid_file}" "${port}" "${passive_min}" "${passive_max}" "${max_clients}" "${max_per_ip}" "${local_ip}" "${@}"
+      ;;
+    stop)
+      stop_server "${pid_file}"
+      ;;
+    restart)
+      stop_server "${pid_file}"
+      sleep 1
+      start_server "${db_path}" "${pid_file}" "${port}" "${passive_min}" "${passive_max}" "${max_clients}" "${max_per_ip}" "${local_ip}" "${@}"
+      ;;
+    status)
+      show_status "${pid_file}"
+      ;;
+  esac
+
+  wait
+}
+
+main "${@}"

@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# 🔗 https://github.com/Klapptnot/bash.sh
+# 🔗 https://github.com/klapptnot/bash.sh
 
 declare -g ___SPINNER_TEXT=""
 declare -g ___SPINNER_PIPE=""
