@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# 🔗 https://github.com/Klapptnot/bash.sh
+# 🔗 https://github.com/klapptnot/bash.sh
 
 # Print passed strings horizontally aligned
 # Usage:

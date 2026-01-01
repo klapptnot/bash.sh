@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# 🔗 https://github.com/Klapptnot/bash.sh
+# 🔗 https://github.com/klapptnot/bash.sh
 
 # Function to easy generate (random) strings
 # Usage: rsum [options]

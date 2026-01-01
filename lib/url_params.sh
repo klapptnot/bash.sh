@@ -1,5 +1,5 @@
-#!/urs/bin/env bash
-# 🔗 https://github.com/Klapptnot/bash.sh
+#!/urs/bin/bash
+# 🔗 https://github.com/klapptnot/bash.sh
 
 include pct_encode.sh
 

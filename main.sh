@@ -1,4 +1,5 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash
+# works on *correct* machines
 
 set -euo pipefail
 
@@ -14,10 +15,19 @@ function main {
 
   mkdir -p "${LOCAL_BIN}" "${LOCAL_LIB}"
 
-  echo "Downloading barg.sh to ${SCRIPT_DIR}/lib/..."
-  curl -fsSL https://raw.githubusercontent.com/klapptnot/barg.sh/main/barg.sh -o "${SCRIPT_DIR}/lib/barg.sh"
+  [ -v TERMUX_APP__PACKAGE_NAME ] || {
+    echo "Downloading barg.sh to ${SCRIPT_DIR}/lib/..."
+    curl -fsSL https://raw.githubusercontent.com/klapptnot/barg.sh/main/barg.sh -o "${SCRIPT_DIR}/lib/barg.sh" || {
+      echo "Error: curl failed to download barg.sh to ${SCRIPT_DIR}/lib/" >&2
+      exit 1
+    }
+  }
+
   echo "Downloading bstow to ${SCRIPT_DIR}/bin/..."
-  curl -fsSL https://raw.githubusercontent.com/klapptnot/bstow/main/bstow -o "${SCRIPT_DIR}/bin/bstow"
+  curl -fsSL https://raw.githubusercontent.com/klapptnot/bstow/main/bstow -o "${SCRIPT_DIR}/bin/bstow" || {
+    echo "Error: curl failed to download bstow to ${SCRIPT_DIR}/bin/" >&2
+    exit 1
+  }
 
   chmod 755 "${SCRIPT_DIR}/bin/bstow"
 
@@ -27,13 +37,15 @@ function main {
   fi
 
   echo "Linking bin/ to ${LOCAL_BIN}..."
-  "${SCRIPT_DIR}/bin/bstow" -Sv -t "${LOCAL_BIN}" -d "${SCRIPT_DIR}/bin"
+  "${SCRIPT_DIR}/bin/bstow" -Svf "${SCRIPT_DIR}/ignore.sh" -t "${LOCAL_BIN}" -d "${SCRIPT_DIR}/bin"
 
   echo "Linking lib/ to ${LOCAL_LIB}..."
-  "${SCRIPT_DIR}/bin/bstow" -Sv -t "${LOCAL_LIB}" -d "${SCRIPT_DIR}/lib"
+  "${SCRIPT_DIR}/bin/bstow" -Svf "${SCRIPT_DIR}/ignore.sh" -t "${LOCAL_LIB}" -d "${SCRIPT_DIR}/lib"
 
-  echo "Linking .bash_env to ${HOME}..."
-  ln -sf "${SCRIPT_DIR}/.bash_env" ~/.bash_env
+  [ -f "${SCRIPT_DIR}/.bash_env" ] || {
+    echo "Linking .bash_env to ${HOME}..."
+    ln -sf "${SCRIPT_DIR}/.bash_env" ~/.bash_env
+  }
 
   echo "Installation complete!"
   echo "Add ${LOCAL_BIN} to your PATH if not already present"

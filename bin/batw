@@ -1,0 +1,66 @@
+#!/usr/bin/bash
+# termux only
+# Simple Android battery-whitelist
+# Usage:
+#   batwh set <package> <true|false>
+#   batwh get <package>
+
+include sys-sh.sh
+
+function main {
+  local cmd="${1}"
+  local pkg="${2}"
+  local flag="${3}"
+
+  if [[ -z "${cmd}" ]]; then
+    echo "usage: batwh set|get <pkg> [true|false]"
+    return 1
+  fi
+
+  case "${cmd}" in
+    get)
+      if [[ -z "${pkg}" ]]; then
+        sys-sh dumpsys deviceidle whitelist
+        return 0
+      fi
+
+      if sys-sh dumpsys deviceidle whitelist | grep -q "${pkg}"; then
+        echo "whitelisted=true"
+      else
+        echo "whitelisted=false"
+      fi
+      ;;
+
+    set)
+      if [[ -z "${pkg}" || -z "${flag}" ]]; then
+        echo "usage: batwh set <pkg> <true|false>"
+        return 1
+      fi
+
+      if [[ "${flag}" == "true" ]]; then
+        echo "Adding ${pkg} to whitelist…"
+        sys-sh cmd deviceidle whitelist "+${pkg}"
+        sys-sh cmd appops set "${pkg}" RUN_IN_BACKGROUND allow
+        sys-sh cmd appops set "${pkg}" RUN_ANY_IN_BACKGROUND allow
+        echo "done"
+      elif [[ "${flag}" == "false" ]]; then
+        echo "Removing ${pkg} from whitelist…"
+        sys-sh cmd deviceidle whitelist "-${pkg}"
+        sys-sh cmd appops set "${pkg}" RUN_IN_BACKGROUND deny
+        sys-sh cmd appops set "${pkg}" RUN_ANY_IN_BACKGROUND deny
+        echo "done"
+      else
+        echo "flag must be true or false"
+        return 1
+      fi
+      ;;
+
+    *)
+      echo "unknown command: ${cmd}"
+      echo "usage: batwh set|get <pkg> [true|false]"
+      return 1
+      ;;
+  esac
+}
+
+main "${@}"

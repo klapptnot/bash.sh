@@ -1,0 +1,139 @@
+#!/usr/bin/bash
+
+LOGGER_LEVEL="${LOGGER_LEVEL:-4}"
+include logger.sh
+include load_conf.sh
+
+function show_help_msg {
+  cat << EOF
+Auto-detect and connect to ADB over network using config + caching.
+
+Config file: ~/.config/_/adbc.conf
+Format (key: value):
+  host: Default ADB host
+  port_range: Port range to scan
+  cache_file: Cache file for last working port
+  rish_enable_adb: Whether to enable wireles ADB (Shizuku rish + Android 11+)
+
+Flags:
+  --help/-h  - Show help
+
+Example config (~/.config/_/adbc.conf):
+  host: 192.168.1.150
+  port_range: 35000-45000
+  cache_file: ~/.cache/adb_port_cache
+  rish_enable_adb: false
+EOF
+}
+
+function try_cached_connection {
+  local host="${1}"
+  local cache_file="${2}"
+
+  [[ ! -f "${cache_file}" ]] && return 1
+
+  local device
+  read -r device < <(grep -oP "${host}:[0-9]{4,5}" "${cache_file}") || {
+    rm -f "${cache_file}" 2> /dev/null
+    return 1
+  }
+
+  if adb connect "${device}" | grep -q 'failed'; then
+    rm -f "${cache_file}" 2> /dev/null
+    return 1
+  fi
+
+  printf '%s\n' "${device}"
+  return 0
+}
+
+function find_adb_port {
+  nmap -Pn -p"${2}" "${1}" 2> /dev/null | awk -F/ '/\/tcp open/{ print $1; exit }'
+}
+
+function toggle_adb_wifi {
+  ! command -v rish &> /dev/null && {
+    log error "rish not installed"
+    return 1
+  }
+  local curr
+  if ! read -r curr < <(rish -c 'settings get global adb_wifi_enabled'); then
+    log error "Failed to read adb_wifi_enabled"
+    return 1
+  fi
+
+  ((curr == 1)) && return
+
+  if ! rish -c 'settings put global adb_wifi_enabled 1'; then
+    log error "Failed to set adb_wifi_enabled to 1"
+    return 1
+  fi
+
+  log info "Set adb_wifi_enabled = 1"
+}
+
+function main {
+  local pids=()
+  adb start-server &> /dev/null &
+  pids+=("${!}")
+
+  declare -A adb_config
+  load_conf adb_config ~/.config/_/adbc.conf
+
+  [ "${adb_config[rish_enable_adb]:-false}" == 'true' ] && {
+    toggle_adb_wifi &
+    pids+=("${!}")
+  }
+
+  local host="${adb_config[host]:-192.168.1.128}"
+  local port_range="${adb_config[port_range]:-35000-50000}"
+  local cache_file="${adb_config[cache_file]:-"${HOME}/.cache/adb_port_cache"}"
+
+  if [[ "${1}" == '--help' || "${1}" == '-h' ]]; then
+    show_help_msg
+    return 0
+  fi
+
+  [ -n "${1}" ] && host="${1}"
+
+  cache_file="${cache_file/#~/"${HOME}"}"
+
+  local cache_dir
+  read -r cache_dir < <(dirname "${cache_file}")
+  mkdir -p "${cache_dir}" 2> /dev/null
+
+  log debug "Using host: ${host}"
+  log debug "Port range: ${port_range}"
+  log debug "Cache file: ${cache_file}"
+
+  wait "${pids[@]}"
+
+  try_cached_connection "${host}" "${cache_file}" && exit 0
+  touch "${cache_file}"
+
+  local port
+  read -r port < <(find_adb_port "${host}" "${port_range}")
+
+  if [[ -z "${port}" ]]; then
+    log error "No open ADB port detected on ${host}"
+    return 1
+  fi
+
+  local device="${host}:${port}"
+  log debug "Detected open port: ${port}"
+
+  if adb connect "${device}" &> /dev/null; then
+    if grep -q "^${host}:" "${cache_file}"; then
+      sed -Ei "s/^${host}:[0-9]{4,5}$/${device}/"
+    else
+      printf '%s\n' "${device}" >> "${cache_file}"
+    fi
+    printf '%s\n' "${device}"
+    return
+  fi
+
+  log error "Failed to connect to ${device}"
+  return 1
+}
+
+main "${@}"

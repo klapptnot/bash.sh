@@ -1,0 +1,147 @@
+#!/usr/bin/bash
+# termux only
+# SSH daemon management with wake lock and config support
+
+LOGGER_LEVEL="${LOGGER_LEVEL:-4}"
+include logger.sh
+include load_conf.sh
+
+function help {
+  cat << EOF
+Enable/disable SSH daemon with wake lock
+
+Config file: ~/.config/_/sshd.conf
+Format (key: value):
+  pidfile: Custom PID file location (default: \$TMPDIR/ssh_daemon.pid)
+  use_wake_lock: Wheter Termux should prevent CPU sleep (default: false)
+  startup_delay: Delay after starting sshd (default: 0.5s)
+
+Flags:
+  --help/-h    - Show this message
+  --status/-s  - Show daemon status without toggling
+
+Example config (~/.config/_/sshd.conf):
+  pidfile: ~/.local/var/run/sshd.pid
+  use_wake_lock: true
+  startup_delay: 1.0
+EOF
+}
+
+function enable_sshd {
+  local pidfile="${1}"
+  local startup_delay="${2}"
+  local use_wake_lock="${3}"
+
+  log info "Enabling SSH daemon"
+
+  [ "${use_wake_lock}" == 'true' ] && termux-wake-lock
+  sshd && sleep "${startup_delay}"
+
+  local sshd_pid
+  read -r sshd_pid < <(pgrep "sshd" | head -n1)
+
+  if [[ -z "${sshd_pid}" ]]; then
+    [ "${use_wake_lock}" == 'true' ] && termux-wake-unlock
+    log error "Failed to start sshd"
+    return 1
+  fi
+
+  printf '%s\n' "${sshd_pid}" > "${pidfile}"
+  log info "SSH daemon enabled (PID: ${sshd_pid})"
+  return 0
+}
+
+function disable_sshd {
+  local pidfile="${1}"
+  local use_wake_lock="${2}"
+  local pid
+
+  read -r pid < "${pidfile}"
+
+  log info "Disabling SSH daemon (PID: ${pid})"
+
+  if kill "${pid}" 2> /dev/null; then
+    log info "SSH daemon disabled"
+    [ "${use_wake_lock}" == 'true' ] && termux-wake-unlock
+    rm "${pidfile}" &> /dev/null
+    return 0
+  else
+    log error "Failed to kill sshd process (PID: ${pid})"
+    return 1
+  fi
+}
+
+function show_status {
+  local pidfile="${1}"
+
+  if [[ ! -e "${pidfile}" ]]; then
+    printf '%s\n' "SSH daemon: disabled (no PID file)"
+    return 1
+  fi
+
+  local pid
+  read -r pid < "${pidfile}"
+
+  if kill -0 "${pid}" &> /dev/null; then
+    printf '%s\n' "SSH daemon: enabled (PID: ${pid})"
+    return 0
+  else
+    printf '%s\n' "SSH daemon: stale PID file (process not running)"
+    return 2
+  fi
+}
+
+function main {
+  declare -A sshd_config
+  init_config sshd_config ~/.config/_/sshd.conf
+
+  local pidfile="${sshd_config[pidfile]:-"${TMPDIR}/ssh_daemon.pid"}"
+  local use_wake_lock="${sshd_config[use_wake_lock]:-false}"
+  local startup_delay="${sshd_config[startup_delay]:-0.5}"
+  local show_status_only=false
+
+  while [[ ${#} -gt 0 ]]; do
+    case "${1}" in
+      --help | -h)
+        help
+        exit 0
+        ;;
+      --status | -s)
+        show_status_only=true
+        shift
+        ;;
+      *)
+        shift
+        ;;
+    esac
+  done
+
+  pidfile="${pidfile/#~/"${HOME}"}"
+
+  log debug "Using PID file: ${pidfile}"
+  log debug "Startup delay: ${startup_delay}s"
+
+  if ${show_status_only}; then
+    show_status "${pidfile}"
+    exit ${?}
+  fi
+
+  if [[ ! -e "${pidfile}" ]]; then
+    enable_sshd "${pidfile}" "${startup_delay}" "${use_wake_lock}"
+  else
+    local pid
+    read -r pid < "${pidfile}"
+
+    if kill -0 "${pid}" &> /dev/null; then
+      disable_sshd "${pidfile}" "${use_wake_lock}"
+    else
+      log warn "Stale PID file detected, cleaning up"
+      rm "${pidfile}" &> /dev/null
+      enable_sshd "${pidfile}" "${startup_delay}" "${use_wake_lock}"
+    fi
+  fi
+
+  wait
+}
+
+main "${@}"
