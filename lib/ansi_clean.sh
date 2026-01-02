@@ -1,5 +1,8 @@
 #!/usr/bin/bash
 
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2025-present Klapptnot
+
 # Usage:
 #  ansi_clean <<< $'\033[38;5;12mHellow\033[0GHello World!\033[0m' # 'Hello World'
 function ansi_clean {

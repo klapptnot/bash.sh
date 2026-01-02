@@ -1,5 +1,8 @@
 #!/usr/bin/bash
 
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2025-present Klapptnot
+
 function load_conf {
   [ -z "${1}" ] && return 1
   local config_file="${2}"
