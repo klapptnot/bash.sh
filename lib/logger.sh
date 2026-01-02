@@ -1,5 +1,8 @@
 #!/usr/bin/bash
 
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2025-present Klapptnot
+
 declare -gra LOGGER_LOG_COLORS=(
   ''
   '\x1b[30m\x1b[41m'

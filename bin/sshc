@@ -1,5 +1,8 @@
 #!/usr/bin/bash
 # termux only
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2025-present Klapptnot
+
 # SSH daemon management with wake lock and config support
 
 LOGGER_LEVEL="${LOGGER_LEVEL:-4}"

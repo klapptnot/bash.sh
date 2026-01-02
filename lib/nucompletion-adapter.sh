@@ -1,5 +1,8 @@
 #!/usr/bin/bash
 
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2025-present Klapptnot
+
 function nucompletion-adapter {
   local s='' res=() o="${IFS}"
   while IFS=$'\t\n' read -r value desc; do

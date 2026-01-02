@@ -1,5 +1,8 @@
 #!/usr/bin/bash
 # termux only
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2025-present Klapptnot
+
 # Simple Android battery-whitelist
 # Usage:
 #   batwh set <package> <true|false>
