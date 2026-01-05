@@ -6,6 +6,7 @@
 function main {
   [ -z "${1}" ] && return 1
   local url="${1}"
+  shift
 
   read -r BROWSER_DESKTOP_FILE < <(xdg-settings get default-web-browser)
   [ -z "${BROWSER_DESKTOP_FILE}" ] && exit 1
@@ -18,7 +19,7 @@ function main {
   read -r BROWSER_EXEC < <(grep -Po '(?<=^Exec=)[^\s]*' "${rpath}")
   [ -z "${BROWSER_EXEC}" ] && exit 1
 
-  exec "${BROWSER_EXEC}" "${argv[@]}" --app="${url}"
+  exec "${BROWSER_EXEC}" --app="${url}" "${@}"
 }
 
 main "${@}"

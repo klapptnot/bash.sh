@@ -6,7 +6,7 @@ set -euo pipefail
 read -r SCRIPT_PATH < <(realpath "${BASH_SOURCE[0]}")
 readonly SCRIPT_DIR="${SCRIPT_PATH%/*}"
 readonly LOCAL_BIN="${HOME}/.local/bin"
-readonly LOCAL_LIB="${HOME}/.local/lib/bash.sh"
+readonly LOCAL_LIB="${HOME}/.local/lib/kitsh"
 
 function uninstall {
   cd "${SCRIPT_DIR}"
@@ -77,7 +77,7 @@ function install {
   echo "Linking lib/ to ${LOCAL_LIB}..."
   "${SCRIPT_DIR}/bin/bstow" -Svf "${SCRIPT_DIR}/ignore.sh" -t "${LOCAL_LIB}" -d "${SCRIPT_DIR}/lib"
 
-  [ -f "${SCRIPT_DIR}/.bash_env" ] || {
+  [[ -e ~/.bash_env ]] || {
     echo "Linking .bash_env to ${HOME}..."
     ln -sf "${SCRIPT_DIR}/.bash_env" ~/.bash_env
   }
