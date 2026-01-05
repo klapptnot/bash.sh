@@ -1,6 +1,6 @@
 #!/usr/bin/bash
 # shellcheck disable=SC2015,SC1090
-export BASHLIB_SCRIPTS=~/.local/lib/bash.sh
+export BASHLIB_SCRIPTS=~/.local/lib/kitsh
 
 # A function to source library scripts from a predefined path.
 # This makes scripts available to both interactive and non-interactive shells.

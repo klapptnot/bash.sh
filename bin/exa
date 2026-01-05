@@ -150,11 +150,11 @@ BARG
     local buf=()
     for ((i = 0; i < GOOGLE_RESULTS; i++)); do
       read -r escaped_title < <(str_escape <<< "${GOOGLE_RESULT_TITLES[i]}")
-      buf+=("{\"what\":\"${escaped_title}\",\"link\":\"${GOOGLE_RESULT_LINKS[i]}\"}")
+      buf+=("{\"desc\":\"${escaped_title}\",\"url\":\"${GOOGLE_RESULT_LINKS[i]}\"}")
     done
     local json=""
     IFS=, json="${buf[*]}"
-    IFS=, printf "[%s]\n" "${json}"
+    printf "[%s]\n" "${json}"
     return 0
   fi
 
@@ -162,10 +162,10 @@ BARG
     local title="${GOOGLE_RESULT_TITLES[i]}"
     [ -n "${title//[!:]/}" ] && title="\"${title//\"/\\\"}\""
     if [[ -t 1 ]] && ! ${EXA_MONOCROME}; then
-      printf '\x1b[38;2;255;169;140m- What: \x1b[38;2;255;232;184m%s\n' "${title}"
-      printf '  \x1b[38;2;195;79;230mLink: \x1b[38;2;189;147;249m%s\x1b[0m\n' "${GOOGLE_RESULT_LINKS[i]}"
+      printf '\x1b[38;2;255;169;140m- desc: \x1b[38;2;255;232;184m%s\n' "${title}"
+      printf '  \x1b[38;2;195;79;230murl: \x1b[38;2;189;147;249m%s\x1b[0m\n' "${GOOGLE_RESULT_LINKS[i]}"
     else
-      printf -- '- What: %s\n  Link: %s\n' "${title}" "${GOOGLE_RESULT_LINKS[i]}"
+      printf -- '- desc: %s\n  url: %s\n' "${title}" "${GOOGLE_RESULT_LINKS[i]}"
     fi
   done
 }

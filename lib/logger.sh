@@ -53,8 +53,8 @@ function log {
 
   local color="${LOGGER_LOG_COLORS[level]}"
   if ((${#1} > 1)); then
-    printf '%b[%(%F %T)T] %5s: %s\x1b[0m\n' "${color}" -1 "${LOGGER_LEVEL_NAMES[level]}" "${message}"
+    printf '%b[%(%F %T)T] %5s: %s\x1b[0m\n' "${color}" -1 "${LOGGER_LEVEL_NAMES[level]}" "${message}" &> /dev/stderr
   else
-    printf '%b%s\x1b[0m\n' "${color}" "${message}"
+    printf '%b%s\x1b[0m\n' "${color}" "${message}" &> /dev/stderr
   fi
 }

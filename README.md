@@ -1,6 +1,6 @@
-# bash.sh
+# kitsh
 
-*A collection of bash scripts that work.*
+*A collection of shell scripts that work.*
 
 ## What's This?
 
@@ -9,14 +9,14 @@ Personal bash utilities and libraries for making shell scripting less painful. B
 ## Installation
 
 ```bash
-git clone https://github.com/klapptnot/bash.sh && cd bash.sh
+git clone https://github.com/klapptnot/kitsh && cd kitsh
 bash main.sh
 
 # uninstall with
 bash main.sh uninstall
 ```
 
-Installs to `~/.local/bin` and `~/.local/lib/bash.sh`. Add the bin directory to your PATH if it's not there already.
+Installs to `~/.local/bin` and `~/.local/lib/kitsh`. Add the bin directory to your PATH if it's not there already.
 
 The installer handles environment-specific filtering automatically—Termux-only scripts won't be linked on desktop systems, and scripts requiring GLIBC regex support (via [barg.sh](https://github.com/klapptnot/barg.sh)) won't be linked on Termux/Bionic. This is managed by [bstow](https://github.com/klapptnot/bstow), which gets downloaded during installation.
 
