@@ -17,7 +17,7 @@ function main {
   #[always]
   meta {
     summary: 'Command line tool for Google Search'
-    extargs: 'EXA_QUERY'
+    extargs: 'GOOSE_QUERY'
     reqargs: true
     helpmsg: true
     showdef: true
@@ -25,29 +25,37 @@ function main {
 
   commands {list: "Show all presets and exit"}
 
-  @ t/timeout :num 5 => EXA_TIMEOUT "Number of seconds to wait for response"
-  @ T/tries :int 5 => EXA_TRIES "Number of attempts to search Google"
-  @ c/cookies :str => EXA_COOKIES "Cookies to send with the request"
-  @ u/user-agent :str "Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0" => EXA_USER_AGENT "User-agent to send with the request"
-  @ a/amount :int 10 => EXA_RESULT_AMOUNT "Number of results to return"
-  @ s/skip :int 0 => EXA_RESULT_START "Number of results skipped"
-  @ p/preset :str => EXA_PRESET "Use preset query format"
-  @ C/command :strs => EXA_LAUNCH_WITH "Run command with each URL as params"
-  @ j/json :flag => EXA_JSON_OUTPUT "Output results in JSON format"
-  @ m/monochrome :flag => EXA_MONOCROME "Disable color output"
+  @ t/timeout :num 5 => GOOSE_TIMEOUT "Number of seconds to wait for response"
+  @ T/tries :int 5 => GOOSE_TRIES "Number of attempts to search Google"
+  @ c/cookies :str => GOOSE_COOKIES "Cookies to send with the request"
+  @ u/user-agent :str "Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0" => GOOSE_USER_AGENT "User-agent to send with the request"
+  @ a/amount :int 10 => GOOSE_RESULT_AMOUNT "Number of results to return"
+  @ s/skip :int 0 => GOOSE_RESULT_START "Number of results skipped"
+  @ p/preset :str => GOOSE_PRESET "Use preset query format"
+  @ C/command :strs => GOOSE_LAUNCH_WITH "Run command with each URL as params"
+  @ j/json :flag => GOOSE_JSON_OUTPUT "Output results in JSON format"
+    m/monochrome :flag => GOOSE_MONOCROME "Disable color output"
   @ L/logger :int 4 => LOGGER_LEVEL "Logger verbosity level, 0 to disable logs"
 BARG
   barg::unload
 
+  declare -A GOOSE_CONFIG
+  load_conf GOOSE_CONFIG ~/.config/_/goose.conf
+  local preset_file="${GOOSE_CONFIG[preset_file]/#~/"${HOME}"}"
+
   if [ "${BARG_SUBCOMMAND}" == 'list' ]; then
-    if [ ! -f ~/.config/dotf/exa_presets.yaml ]; then
-      log e 'Failed to load presets: no such file ~/.config/dotf/exa_presets.yaml'
+    if [ -z "${preset_file}" ]; then
+      log e 'No preset file defined. Add `preset_file: <path>` to ~/.config/_/goose.conf'
       return 1
     fi
-    mapfile -t names < <(grep -oP '^\w+' ~/.config/dotf/exa_presets.yaml)
-    mapfile -t presets < <(grep -oP '(?<=: ).*$' ~/.config/dotf/exa_presets.yaml)
+    if [ ! -f "${preset_file}" ]; then
+      log e 'Failed to load presets: no such file %s' "${preset_file}"
+      return 1
+    fi
+    mapfile -t names < <(grep -oP '^\w+' "${preset_file}")
+    mapfile -t presets < <(grep -oP '(?<=: ).*$' "${preset_file}")
     for ((i = 0; i < ${#presets[@]}; i++)); do
-      if [[ -t 1 ]] && ! ${EXA_MONOCROME}; then
+      if [[ -t 1 ]] && ! ${GOOSE_MONOCROME}; then
         printf '\x1b[38;2;255;169;140m- Name: \x1b[38;2;255;232;184m%s\n' "${names[i]}"
         printf '  \x1b[38;2;195;79;230mFormat: \x1b[38;2;189;147;249m%s\x1b[0m\n' "${presets[i]}"
       else
@@ -57,38 +65,41 @@ BARG
     return 1
   fi
 
-  declare -A EXA_CONFIG
-  load_conf EXA_CONFIG ~/.config/_/exa.conf && {
-    [[ -z "${BARG_ARGV_TABLE[EXA_TIMEOUT]}" && -n "${EXA_CONFIG[timeout]}" ]] \
-      && EXA_TIMEOUT="${EXA_CONFIG[timeout]}"
-    [[ -z "${BARG_ARGV_TABLE[EXA_TRIES]}" && -n "${EXA_CONFIG[tries]}" ]] \
-      && EXA_TRIES="${EXA_CONFIG[tries]}"
-    [[ -z "${BARG_ARGV_TABLE[EXA_COOKIES]}" && -n "${EXA_CONFIG[cookies]}" ]] \
-      && EXA_COOKIES="${EXA_CONFIG[cookies]}"
-    [[ -z "${BARG_ARGV_TABLE[EXA_USER_AGENT]}" && -n "${EXA_CONFIG[user_agent]}" ]] \
-      && EXA_USER_AGENT="${EXA_CONFIG[user_agent]}"
-    [[ -z "${BARG_ARGV_TABLE[EXA_RESULT_AMOUNT]}" && -n "${EXA_CONFIG[amount]}" ]] \
-      && EXA_RESULT_AMOUNT="${EXA_CONFIG[amount]}"
-    [[ -z "${BARG_ARGV_TABLE[EXA_RESULT_START]}" && -n "${EXA_CONFIG[skip]}" ]] \
-      && EXA_RESULT_START="${EXA_CONFIG[skip]}"
+  {
+    [[ -z "${BARG_ARGV_TABLE[GOOSE_TIMEOUT]}" && -n "${GOOSE_CONFIG[timeout]}" ]] \
+      && GOOSE_TIMEOUT="${GOOSE_CONFIG[timeout]}"
+    [[ -z "${BARG_ARGV_TABLE[GOOSE_TRIES]}" && -n "${GOOSE_CONFIG[tries]}" ]] \
+      && GOOSE_TRIES="${GOOSE_CONFIG[tries]}"
+    [[ -z "${BARG_ARGV_TABLE[GOOSE_COOKIES]}" && -n "${GOOSE_CONFIG[cookies]}" ]] \
+      && GOOSE_COOKIES="${GOOSE_CONFIG[cookies]}"
+    [[ -z "${BARG_ARGV_TABLE[GOOSE_USER_AGENT]}" && -n "${GOOSE_CONFIG[user_agent]}" ]] \
+      && GOOSE_USER_AGENT="${GOOSE_CONFIG[user_agent]}"
+    [[ -z "${BARG_ARGV_TABLE[GOOSE_RESULT_AMOUNT]}" && -n "${GOOSE_CONFIG[amount]}" ]] \
+      && GOOSE_RESULT_AMOUNT="${GOOSE_CONFIG[amount]}"
+    [[ -z "${BARG_ARGV_TABLE[GOOSE_RESULT_START]}" && -n "${GOOSE_CONFIG[skip]}" ]] \
+      && GOOSE_RESULT_START="${GOOSE_CONFIG[skip]}"
   }
 
   # shellcheck disable=SC2153
-  local query="${EXA_QUERY[*]}"
+  local query="${GOOSE_QUERY[*]}"
 
-  if ((EXA_RESULT_AMOUNT < 1)) || ((EXA_RESULT_AMOUNT > 100)); then
-    log i 'Invalid amount of results (%s), defaulting to 10' "${EXA_RESULT_AMOUNT}"
-    EXA_RESULT_AMOUNT=10
+  if ((GOOSE_RESULT_AMOUNT < 1)) || ((GOOSE_RESULT_AMOUNT > 100)); then
+    log i 'Invalid amount of results (%s), defaulting to 10' "${GOOSE_RESULT_AMOUNT}"
+    GOOSE_RESULT_AMOUNT=10
   fi
 
-  if [ -n "${EXA_PRESET}" ]; then
-    if [ ! -f ~/.config/dotf/exa_presets.yaml ]; then
-      log e 'Failed to load presets: no such file ~/.config/dotf/exa_presets.yaml'
+  if [ -n "${GOOSE_PRESET}" ]; then
+    if [ -z "${preset_file}" ]; then
+      log e 'No preset file defined. Add `preset_file: <path>` to ~/.config/_/goose.conf'
+      return 1
+    fi
+    if [ ! -f "${preset_file}" ]; then
+      log e 'Failed to load presets: no such file %s' "${preset_file}"
       return 1
     fi
     local preset_format='{{QUERY}}'
-    if ! preset_format=$(grep -oP "(?<=${EXA_PRESET}: ).*" ~/.config/dotf/exa_presets.yaml); then
-      log e 'Failed to get query from preset: no such preset "%s"' "${EXA_PRESET}"
+    if ! preset_format=$(grep -oP "(?<=${GOOSE_PRESET}: ).*" "${preset_file}"); then
+      log e 'Failed to get query from preset: no such preset "%s"' "${GOOSE_PRESET}"
       return 1
     fi
     query="${preset_format//\{\{QUERY\}\}/${query}}"
@@ -96,14 +107,14 @@ BARG
 
   declare -A grequest=()
   grequest['query']="${query}"
-  grequest['tries']="${EXA_TRIES}"
-  grequest['cookies']="${EXA_COOKIES}"
-  grequest['timeout']="${EXA_TIMEOUT}"
-  grequest['user_agent']="${EXA_USER_AGENT}"
+  grequest['tries']="${GOOSE_TRIES}"
+  grequest['cookies']="${GOOSE_COOKIES}"
+  grequest['timeout']="${GOOSE_TIMEOUT}"
+  grequest['user_agent']="${GOOSE_USER_AGENT}"
 
   # google params
-  grequest['g_num']="${EXA_RESULT_AMOUNT}"
-  grequest['g_start']="${EXA_RESULT_START}"
+  grequest['g_num']="${GOOSE_RESULT_AMOUNT}"
+  grequest['g_start']="${GOOSE_RESULT_START}"
 
   if ! google_search grequest; then
     log e 'Failed to search google'
@@ -115,15 +126,15 @@ BARG
     return 1
   fi
 
-  if ((${#EXA_LAUNCH_WITH[@]} > 0)); then
-    if ! command -v "${EXA_LAUNCH_WITH[0]}" &> /dev/null; then
-      log e 'Command %s not found or not executable' "${EXA_LAUNCH_WITH[0]}"
+  if ((${#GOOSE_LAUNCH_WITH[@]} > 0)); then
+    if ! command -v "${GOOSE_LAUNCH_WITH[0]}" &> /dev/null; then
+      log e 'Command %s not found or not executable' "${GOOSE_LAUNCH_WITH[0]}"
       return 1
     fi
 
     placeholder_index=-1
-    for i in "${!EXA_LAUNCH_WITH[@]}"; do
-      if [[ "${EXA_LAUNCH_WITH[i]}" == '{}' ]]; then
+    for i in "${!GOOSE_LAUNCH_WITH[@]}"; do
+      if [[ "${GOOSE_LAUNCH_WITH[i]}" == '{}' ]]; then
         placeholder_index="${i}"
         break
       fi
@@ -132,12 +143,12 @@ BARG
     # index -1 and also index 0 is the command
     if ((placeholder_index < 1)); then
       log i "Launching command..."
-      exec "${EXA_LAUNCH_WITH[@]}" "${GOOGLE_RESULT_LINKS[@]}"
+      exec "${GOOSE_LAUNCH_WITH[@]}" "${GOOGLE_RESULT_LINKS[@]}"
     fi
 
     log i "Launching commands..."
     for link in "${GOOGLE_RESULT_LINKS[@]}"; do
-      cmd=("${EXA_LAUNCH_WITH[@]}")
+      cmd=("${GOOSE_LAUNCH_WITH[@]}")
       cmd[placeholder_index]="${link}"
       log i 'Running: %s' "${cmd[*]}"
       "${cmd[@]}" > /dev/null &
@@ -146,7 +157,7 @@ BARG
     return
   fi
 
-  if ${EXA_JSON_OUTPUT}; then
+  if ${GOOSE_JSON_OUTPUT}; then
     local buf=()
     for ((i = 0; i < GOOGLE_RESULTS; i++)); do
       read -r escaped_title < <(str_escape <<< "${GOOGLE_RESULT_TITLES[i]}")
@@ -161,7 +172,7 @@ BARG
   for ((i = 0; i < GOOGLE_RESULTS; i++)); do
     local title="${GOOGLE_RESULT_TITLES[i]}"
     [ -n "${title//[!:]/}" ] && title="\"${title//\"/\\\"}\""
-    if [[ -t 1 ]] && ! ${EXA_MONOCROME}; then
+    if [[ -t 1 ]] && ! ${GOOSE_MONOCROME}; then
       printf '\x1b[38;2;255;169;140m- desc: \x1b[38;2;255;232;184m%s\n' "${title}"
       printf '  \x1b[38;2;195;79;230murl: \x1b[38;2;189;147;249m%s\x1b[0m\n' "${GOOGLE_RESULT_LINKS[i]}"
     else
