@@ -28,15 +28,15 @@ The installer handles environment-specific filtering automatically—Termux-only
 
 ## Key Scripts
 
-**aapi** — Termux API wrapper
-**adbc** — Auto-detect ADB connection
-**bulkren** — Bulk file renaming with metadata support
-**exa** — Command-line Google Search
-**ftpc** — Pure-FTPd server management
-**notify** — Send notifications via D-Bus or ntfy.sh
-**spawn** — Process spawning with delays and options
-**wayshot** — Wayland screenshot utility
-**wfrecord** — Wayland screen recording
+- **aapi** — Termux API wrapper
+- **adbc** — Auto-detect ADB connection
+- **bulkren** — Bulk file renaming with metadata support
+- **exa** — Command-line Google Search
+- **ftpc** — Pure-FTPd server management
+- **notify** — Send notifications via D-Bus or ntfy.sh
+- **spawn** — Process spawning with delays and options
+- **wayshot** — Wayland screenshot utility
+- **wfrecord** — Wayland screen recording
 
 Plus utilities for tar operations, SSH daemon management, clipboard operations, color mapping, and more.
 
