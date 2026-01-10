@@ -17,10 +17,10 @@ function main {
   #[always]
   meta {
     summary: 'Command line tool for Google Search'
-    extargs: 'GOOSE_QUERY'
-    reqargs: true
-    helpmsg: true
-    showdef: true
+    spare_args_var: 'GOOSE_QUERY'
+    spare_args_required: true
+    help_enabled: true
+    show_defaults: true
   }
 
   commands {list: "Show all presets and exit"}

@@ -50,12 +50,14 @@ function image_metadata_get {
 }
 
 function main {
-  barg::parse "${@}" << BARG || { echo "Command need args" && exit 1; }
+  barg::parse "${@}" << BARG
+    #[always]
     meta {
       summary: "Bulk file remame"
-      extargs: "PARAMS"
-      reqargs: true
-      helpmsg: true
+      spare_args_var: "PARAMS"
+      spare_args_required: true
+      help_enabled: true
+      allow_empty_values: true
     }
     f/files :strs => FILES "List of files to rename"
     F/folder :str => FOLDER "Directory containing files to rename"
