@@ -53,6 +53,8 @@ function wfrecord::start_recording {
     cmd+=(--audio="${source}")
   fi
 
+  wfrecord::indicate_recording
+
   cmd+=(-r "${WFRECORD_FRAMERATE}")
 
   if [ -n "${WFRECORD_QUALITY}" ]; then
@@ -80,12 +82,11 @@ function wfrecord::start_recording {
 function wfrecord::record_screen {
   ${WFRECORD_SCREEN_START_STOP} && {
     pkill --signal SIGINT wf-recorder && {
-      printf '\x1b[38;5;2m[ OK  ]\x1b[00m Session stopped\n' >&2
       wfrecord::indicate_recording '#4646ff60'
+      printf '\x1b[38;5;2m[ OK  ]\x1b[00m Session stopped\n' >&2
       return 1
     }
   }
-  wfrecord::indicate_recording &
   wfrecord::start_recording "${1}.${WFRECORD_CONTAINER}" "${@:2}"
 }
 
@@ -96,7 +97,6 @@ function wfrecord::record_region {
   [ -z "${POS_N_SIZE}" ] && wfrecord::exit_msg 'Nothing selected, abort'
   printf '\x1b[38;5;2m[ OK  ]\x1b[00m Region selected: %s\n' "${POS_N_SIZE}" >&2
 
-  wfrecord::indicate_recording &
   wfrecord::start_recording "${1}.${WFRECORD_CONTAINER}" -g "${POS_N_SIZE}" "${@:2}"
 }
 
@@ -110,7 +110,6 @@ function wfrecord::record_window {
   )
 
   [ "${POS_N_SIZE}" == 'null,null nullxnull' ] && wfrecord::exit_msg 'No window found, abort'
-  wfrecord::indicate_recording &
   wfrecord::start_recording "${1}_${WCLASS}.${WFRECORD_CONTAINER}" -g "${POS_N_SIZE}" "${@:2}"
 }
 
