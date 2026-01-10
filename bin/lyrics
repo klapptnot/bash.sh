@@ -1,0 +1,165 @@
+#!/usr/bin/env nu
+
+use std log
+
+const USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+
+def get-mxm-urls [query: string, tries: int, timeout: duration]: nothing -> table<desc: string, url: string> {
+  let timeout = (($timeout | into int ) / 1000000000)
+  let res = (
+    goose --json
+      --timeout $timeout
+      --tries $tries
+      "site:musixmatch.com/lyrics" $query
+  )
+
+  ($res | from json | where url !~ .*translation.*)
+}
+
+def get-mxm-json [url: string, tries: int = 5, timeout: duration = 5sec] {
+  mut body = ""
+
+  for _ in 1..$tries {
+    let res = (
+      http get --full --max-time $timeout
+        --headers ["user-agent", $USER_AGENT]
+        $url
+    )
+    if $res.status == 200 {
+      $body = $res.body
+      break
+    }
+  }
+
+  if $body == "" {
+    error make {
+      msg: "Could not get the data from Musixmatch",
+      span: (metadata $url).span
+    }
+  }
+
+  $body | grep -Po '(?<=<script\sid="__NEXT_DATA__"\stype="application/json">).*(?=</script>)'
+}
+
+def select-url [urls: table<desc: string, url: string>] {
+  if ($urls | length) == 1 {
+    return ($urls.0 | get url)
+  }
+
+  print $"(ansi --escape '38;2;195;79;230m')Available options are:(ansi reset)"
+  let col1 = ansi --escape '38;2;255;169;140m'
+  let col2 = ansi --escape '38;2;255;232;184m'
+  let col3 = ansi --escape '38;2;195;79;230m'
+  let col4 = ansi --escape '38;2;189;147;249m'
+  let rset = ansi reset
+  for i in 0..(($urls | length) - 1) {
+    let it = ($urls | get $i)
+    print $"  ($i) ($col1)-> ($col2)($it.desc)"
+    print $"    ($col3)At: ($col4)($it.url)($rset)"
+  }
+
+  print -n $"($col3)Select one from above:($rset) "
+  let uinp = (input --numchar 1 | into int)
+
+  if $uinp >= ($urls | length) {
+    print $"(ansi --escape '38;5;9m')Number too large \(max (($urls | length) - 1))($rset)"
+    exit 1
+  }
+
+  ($urls | get $uinp | get url)
+}
+
+def describe-data [data: record] {
+  return {
+      name: ($data.props.pageProps.data.trackInfo.data.track.name | default "Unspecified"),
+      artist: ($data.props.pageProps.data.trackInfo.data.track.artistName | default "Unspecified"),
+      album: ($data.props.pageProps.data.trackInfo.data.track.albumName | default "Unspecified"),
+      has_lyrics: ($data.props.pageProps.data.trackInfo.data.track.hasLyrics | default false),
+      has_lyrics_struct: ($data.props.pageProps.data.trackInfo.data.track.hasTrackStructure | default false),
+      lyrics_lang: ($data.props.pageProps.data.trackInfo.data.lyrics?.languageDescription? | default "Unspecified"),
+      lyrics: ($data.props.pageProps.data.trackInfo.data.lyrics?.body? | default "No lyrics available"),
+      lyrics_struct: ($data.props.pageProps.data.trackInfo.data.trackStructureList?),
+      lyrics_copyright: ($data.props.pageProps.data.trackInfo.data.lyrics?.copyright? | default "Unspecified"),
+      genre: ($data.props.pageProps.data.trackInfo.data.track.artists.0.genres.0?.name? | default "Unspecified"),
+      cover: ($data.props.pageProps.data.trackInfo.data.track.coverImage | default ""),
+      released: ($data.props.pageProps.data.trackInfo.data.track.releaseDate | default "0000-00-00"),
+      spotify: ($"https://open.spotify.com/track/($data.props.pageProps.data.trackInfo.data.track.spotifyId)"),
+      musixmatch: ($"https://musixmatch.com/lyrics/($data.props.pageProps.data.trackInfo.data.track.vanityId)"),
+  }
+}
+
+# Get data/lyrics of musics directly from Musixmatch
+export def main [
+  query: string,    # Query used to try to find song, or musixmatch URL
+  tries: int = 2,   # Max number of retries before giving up search
+  timeout: duration = 5sec, # Max time to wait for response
+  --lyrics (-l),    # Print only the lyrics of the songs
+  --repeat (-r),    # Print <title> - <artist> when --lyrics/-l is passed
+  --select (-s)     # Select one of the available songs found
+]: nothing -> nothing {
+  let url = (if $query =~ "https?://musixmatch.com/lyrics/[^/]*/.*" {
+    $query
+  } else if $query =~ "^https?://[^ ]*$" {
+    error make {
+      msg: "Query looks like a plain URL",
+      help: "Use a musixmatch URL or words that may represent a song",
+      span: (metadata $query).span
+    }
+  } else {
+    if $select {
+      select-url (get-mxm-urls $query $tries $timeout)
+    } else {
+      (get-mxm-urls $query $tries $timeout).0.url
+    }
+  })
+
+  let mxm = (get-mxm-json $url $tries $timeout | from json)
+  let track = describe-data $mxm
+
+  let col0 = ansi --escape '38;2;189;147;249m'
+  if $lyrics {
+    if not $track.has_lyrics {
+      error make {
+        msg: "This song has no lyrics or lyrics are not available",
+      }
+    }
+    if $repeat {
+      print $"(ansi --escape '38;2;195;79;230m')($track.name)(ansi --escape '38;2;223;225;255m') - ($col0)($track.artist)(ansi reset)\n"
+    }
+    print $"($track.lyrics)"
+    exit 0
+  }
+
+  let col1 = ansi --escape '38;2;255;169;140m'
+  let col2 = ansi --escape '38;2;255;232;184m'
+  let rset = ansi reset
+  print $"($col1)TITLE     : ($col2)($track.name)
+($col1)ARTIST    : ($col2)($track.artist)
+($col1)ALBUM     : ($col2)($track.album)
+($col1)GENRE     : ($col2)($track.genre)
+($col1)RELEASED  : ($col2)($track.released)
+($col1)SPOTIFY   : ($col2)($track.spotify)
+($col1)MUSIXMATCH: ($col2)($track.musixmatch)
+
+($col1)LYRICS($rset)\n"
+
+  if not $track.has_lyrics {
+    print "Lyrics are not available :("
+    exit 0
+  }
+
+  if not $track.has_lyrics_struct {
+    print $"($track.lyrics)($rset)\n\nCopyright -> ($track.lyrics_copyright)"
+    exit 0
+  }
+
+  for paragraph in $track.lyrics_struct {
+    print $"($col0)#[section\(($paragraph.title)\)]($rset)"
+    for $line in $paragraph.lines {
+      print $"($line.text)"
+    }
+    print "\n"
+  }
+
+  print -n $"Copyright -> ($track.lyrics_copyright)"
+}
