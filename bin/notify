@@ -318,11 +318,12 @@ function main {
   readonly LOGGER_LEVEL="${LOGGER_LEVEL:-4}"
   barg::parse "${@}" <<EOF || BARG_SUBCOMMAND='help'
   meta {
-    prognam: 'notify'
-    extargs: 'NOTIFY_POSITIONAL_ARGS'
-    reqargs: true
-    helpmsg: true
+    argv_zero: 'notify'
+    spare_args_var: 'NOTIFY_POSITIONAL_ARGS'
+    spare_args_required: true
+    help_enabled: true
   }
+
   commands {
     *send: "Send a notification"
     pull: "Pull and display notifications from ntfy.sh"

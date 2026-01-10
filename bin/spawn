@@ -84,10 +84,11 @@ function main {
   #[always]
   meta {
     summary: "Command line tool to spawn processes"
-    extargs: 'SPAWN_EXEC_LINE'
-    epilogs: '_epilogs'
-    reqargs: true
-    helpmsg: true
+    spare_args_var: 'SPAWN_EXEC_LINE'
+    epilog_lines: '_epilogs'
+    spare_args_required: true
+    help_enabled: true
+    show_defaults: true
   }
 
   r/restart :flag => SPAWN_RESTART "Restart the process if it is already running"

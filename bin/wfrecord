@@ -135,13 +135,13 @@ function main {
   barg::parse "${@}" << EOF
   #[always]
   meta {
+    argv_zero: 'wfrecord'
     summary: 'Wayland video recording utility'
-    prognam: 'wfrecord'
-    extargs: 'WFRECORD_EXTRAS'
-    epilogs: '_epilog_lines'
-    helpmsg: true
-    showdef: true
-    reqcmds: true
+    spare_args_var: 'WFRECORD_EXTRAS'
+    epilog_lines: '_epilog_lines'
+    help_enabled: true
+    show_defaults: true
+    subcommand_required: true
   }
 
   commands {
@@ -173,9 +173,6 @@ EOF
     screen) wfrecord::record_screen "${SAVE_PATH}" ;;
     region) wfrecord::record_region "${SAVE_PATH}" ;;
     window) wfrecord::record_window "${SAVE_PATH}" ;;
-    *)
-      wfrecord::exit_msg "Missing valid subcommand: screen, region, or window"
-      ;;
   esac
 }
 

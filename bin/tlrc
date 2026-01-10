@@ -88,7 +88,8 @@ function main {
   #[always]
   meta {
     summary: "Create a timed lyrics file"
-    helpmsg: true
+    help_enabled: true
+    show_defaults: true
   }
 
   ! s/song :str  => LYR_SONG_FILE "Audio file for playback"

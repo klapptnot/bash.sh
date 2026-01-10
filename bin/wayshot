@@ -107,13 +107,13 @@ function main {
   barg::parse "${@}" << EOF
   #[always]
   meta {
+    argv_zero: 'wayshot'
     summary: 'Wayland screenshot utility'
-    prognam: 'wayshot'
-    extargs: 'WAYSHOT_EXTRAS'
-    epilogs: '_epilog_lines'
-    helpmsg: true
-    showdef: true
-    reqcmds: true
+    spare_args_var: 'WAYSHOT_EXTRAS'
+    epilog_lines: '_epilog_lines'
+    help_enabled: true
+    show_defaults: true
+    subcommand_required: true
   }
 
   commands {
