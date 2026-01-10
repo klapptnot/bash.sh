@@ -182,7 +182,7 @@ function start_server {
 
 function main {
   declare -A ftpd_config
-  init_config ftpd_config ~/.config/_/ftpd.conf
+  load_conf ftpd_config ~/.config/_/ftpd.conf
 
   local db_path="${ftpd_config[db_path]:-"${HOME}/.pure-ftpd/pureftpd.pdb"}"
   local pid_file="${ftpd_config[pid_file]:-"${HOME}/.pure-ftpd/pure-ftpd.pid"}"

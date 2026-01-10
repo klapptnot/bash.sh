@@ -8,7 +8,7 @@ include barg.sh
 include logger.sh
 
 function get_file_hash {
-  ls -lh "${WATCH_PATH}" 2>/dev/null | md5sum | cut -d ' ' -f 1
+  ls -lh --time-style=full-iso "${WATCH_PATH}" 2>/dev/null | md5sum | cut -d ' ' -f 1
 }
 
 function time_parse {
@@ -41,8 +41,8 @@ function run_on_change {
     read -r CURRENT_HASH < <(get_file_hash)
 
     if [ "${CURRENT_HASH}" != "${LAST_HASH}" ]; then
-      log i '%(%F %T)T: Change detected! %s' -1
-      "${@}"
+      log info 'Change detected!'
+      setsid --fork spawn -r "${@}" # call this one to restart it
       LAST_HASH="${CURRENT_HASH}"
     fi
   done

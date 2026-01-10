@@ -96,7 +96,7 @@ function show_status {
 
 function main {
   declare -A sshd_config
-  init_config sshd_config ~/.config/_/sshd.conf
+  load_conf sshd_config ~/.config/_/sshd.conf
 
   local pidfile="${sshd_config[pidfile]:-"${TMPDIR}/ssh_daemon.pid"}"
   local use_wake_lock="${sshd_config[use_wake_lock]:-false}"
