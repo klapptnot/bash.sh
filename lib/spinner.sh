@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2025-present Klapptnot
 
-
 declare -g ___SPINNER_TEXT=""
 declare -g ___SPINNER_PIPE=""
 declare -g ___SPINNER_PID=""

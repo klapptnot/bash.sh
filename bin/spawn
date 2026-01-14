@@ -3,12 +3,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2025-present Klapptnot
 
-
 include barg.sh
 include logger.sh
 
 function get_file_hash {
-  ls -lh --time-style=full-iso "${WATCH_PATH}" 2>/dev/null | md5sum | cut -d ' ' -f 1
+  ls -lh --time-style=full-iso "${WATCH_PATH}" 2> /dev/null | md5sum | cut -d ' ' -f 1
 }
 
 function time_parse {

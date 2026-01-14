@@ -16,7 +16,7 @@ function load_hyprlang {
   local kvc_r='\$([\*A-Za-z_.][A-Za-z0-9_.]+)\s*=\s*'"${val_r}"
   local obj_r="\{((\s*([\*A-Za-z_.][A-Za-z0-9_.]+)\s*=\s*${val_r}\s*)+)\}"
 
-  local f="$(<"${config_file}")"
+  local f="$(< "${config_file}")"
   local key val obj reg
 
   declare -A vars

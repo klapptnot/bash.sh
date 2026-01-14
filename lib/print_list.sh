@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2025-present Klapptnot
 
-
 # Print passed strings horizontally aligned
 # Usage:
 #   print_list [strings]

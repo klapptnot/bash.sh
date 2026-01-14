@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2025-present Klapptnot
 
-
 # Strip leading or trailing [:space:] from stdin input
 # Usage:
 #    str_strip start <<< "  Hi! UwU~  " # "Hi! UwU~  "

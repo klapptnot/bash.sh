@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2025-present Klapptnot
 
-
 include barg.sh
 
 function wfrecord::exit_msg {
@@ -14,6 +13,7 @@ function wfrecord::exit_msg {
 function wfrecord::indicate_recording {
   slurp "-b${1:-#ff464660}" &
   local pid=${!}
+  disown "${pid}"
   sleep 0.2
   kill -9 ${pid}
 }
@@ -37,7 +37,6 @@ function wfrecord::find_source {
 }
 
 function wfrecord::start_recording {
-  sleep 0.1
   local output_file="${1}"
   shift
 
@@ -61,8 +60,8 @@ function wfrecord::start_recording {
     cmd+=(-q "${WFRECORD_QUALITY}")
   fi
 
-  cmd+=("${@}")
   cmd+=(-f "${output_file}")
+  cmd+=("${@}")
 
   printf '\x1b[38;5;2m[ REC ]\x1b[00m Starting recording: %s\n' "${output_file##*/}" >&2
   printf '\x1b[38;5;3m[ TIP ]\x1b[00m Press Ctrl+C to stop recording\n' >&2

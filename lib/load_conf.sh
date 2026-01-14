@@ -24,4 +24,3 @@ function load_conf {
 
   return 0
 }
-

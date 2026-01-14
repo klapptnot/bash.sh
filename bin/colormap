@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2025-present Klapptnot
 
-
 function print_palette_16 {
   # Define array of ANSI color names
   local color_names=(

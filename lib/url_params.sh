@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2025-present Klapptnot
 
-
 include pct_encode.sh
 
 # Genreate a URL param string based on a associative array

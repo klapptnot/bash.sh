@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2025-present Klapptnot
 
-
 include rsum.sh
 include barg.sh
 
@@ -13,37 +12,37 @@ function image_metadata_get {
   local METAINFO="none"
 
   case "${what}" in
-  format)
-    read -r METAINFO < <(magick identify -format '%m' "${file}")
-    ;;
-  width)
-    read -r METAINFO < <(magick identify -format '%w' "${file}")
-    ;;
-  height)
-    read -r METAINFO < <(magick identify -format '%h' "${file}")
-    ;;
-  depth)
-    read -r METAINFO < <(magick identify -format '%z' "${file}")
-    ;;
-  colorspace)
-    read -r METAINFO < <(magick identify -format '%[colorspace]' "${file}")
-    ;;
-  filesize)
-    read -r METAINFO < <(stat -c%s "${file}")
-    ;;
-  filesize_kb)
-    read -r METAINFO < <(stat -c%s "${file}")
-    METAINFO=$((METAINFO / 1024))
-    ;;
-  date*)
-    IFS=':' read -r _ fmt <<<"${what}"
-    [ -z "${fmt}" ] && fmt="%Y-%m-%d-%H-%M-%S"
-    read -r date_exif < <(magick identify -format '%[date:create]' "${file}")
-    read -r METAINFO < <(date -d "${date_exif}" +"${fmt}")
-    ;;
-  *)
-    return 1
-    ;;
+    format)
+      read -r METAINFO < <(magick identify -format '%m' "${file}")
+      ;;
+    width)
+      read -r METAINFO < <(magick identify -format '%w' "${file}")
+      ;;
+    height)
+      read -r METAINFO < <(magick identify -format '%h' "${file}")
+      ;;
+    depth)
+      read -r METAINFO < <(magick identify -format '%z' "${file}")
+      ;;
+    colorspace)
+      read -r METAINFO < <(magick identify -format '%[colorspace]' "${file}")
+      ;;
+    filesize)
+      read -r METAINFO < <(stat -c%s "${file}")
+      ;;
+    filesize_kb)
+      read -r METAINFO < <(stat -c%s "${file}")
+      METAINFO=$((METAINFO / 1024))
+      ;;
+    date*)
+      IFS=':' read -r _ fmt <<< "${what}"
+      [ -z "${fmt}" ] && fmt="%Y-%m-%d-%H-%M-%S"
+      read -r date_exif < <(magick identify -format '%[date:create]' "${file}")
+      read -r METAINFO < <(date -d "${date_exif}" +"${fmt}")
+      ;;
+    *)
+      return 1
+      ;;
   esac
 
   printf '%s' "${METAINFO}"
